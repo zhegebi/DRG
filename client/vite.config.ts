@@ -15,4 +15,13 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+  server: {
+    port: 5173,          // 前端默认端口
+    proxy: {
+      '/api': {          // 前端发往 /api 的请求都会被代理
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      }
+    }
+  },
 })
