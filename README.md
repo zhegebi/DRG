@@ -12,7 +12,7 @@
 cd client && npm install
 
 # 后端
-cd server && uv sync
+cd server && uv sync && uv pip install -e .
 ```
 
 ## 运行 (根目录执行)
