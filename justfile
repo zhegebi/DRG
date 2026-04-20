@@ -54,7 +54,7 @@ alias cl := clean
 extract_script := "
 import json
 from server.main import app
-with open('" + openapi_file + "', 'w', encoding='utf-8') as f:
+with open(r'" + openapi_file + "', 'w', encoding='utf-8') as f:
     json.dump(app.openapi(), f)
 "
 
