@@ -20,6 +20,13 @@ install:
     uv sync
 alias i := install
 
+# 格式检查
+check:
+    cd "{{client_dir}}" {{and}} npm run type-check
+    uv run ruff check
+    uv run ty check
+alias ck := check
+
 # 开发模式：前端热重载 + 后端热重载
 [parallel]
 dev: _dev-frontend _dev-backend
@@ -47,4 +54,4 @@ clean:
 clean:
     if exist "{{client_output_dir}}" rmdir /s /q "{{client_output_dir}}"
     for /d /r . %d in (__pycache__) do @if exist "%d" rmdir /s /q "%d"
-alias c := clean
+alias cl := clean
