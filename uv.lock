@@ -67,6 +67,15 @@ wheels = [
 ]
 
 [[package]]
+name = "concurrently"
+version = "2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/cb/528221dfd10c944ddc2531b6882ad13513a35670ed418a494fe328d1375b/concurrently-2.1.tar.gz", hash = "sha256:f477dbee46bf2deb2a88e5ed846f0306ddad34b9cf7c3d78e69be97b73904ff1", size = 10701, upload-time = "2025-01-19T11:19:42.128Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f0/2e/366c547b67bb44603377bbaabe92aab4e0ee2483c84b4ea475b97e996fe6/concurrently-2.1-py3-none-any.whl", hash = "sha256:d80305f488cf400c76c575eae78c0f99c8c67d4510181f903d15d3b2722019ad", size = 14926, upload-time = "2025-01-19T11:19:40.259Z" },
+]
+
+[[package]]
 name = "dnspython"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -83,8 +92,22 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "concurrently" },
+    { name = "sh" },
+    { name = "shx" },
+]
+
 [package.metadata]
 requires-dist = [{ name = "fastapi", extras = ["standard"], specifier = ">=0.136.0" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "concurrently", specifier = ">=2.1" },
+    { name = "sh", specifier = ">=2.2.2" },
+    { name = "shx", specifier = ">=0.4.2" },
+]
 
 [[package]]
 name = "email-validator"
@@ -636,12 +659,30 @@ wheels = [
 ]
 
 [[package]]
+name = "sh"
+version = "2.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/52/f43920223c93e31874677c681b8603d36a40d3d8502d3a37f80d3995d43e/sh-2.2.2.tar.gz", hash = "sha256:653227a7c41a284ec5302173fbc044ee817c7bad5e6e4d8d55741b9aeb9eb65b", size = 345866, upload-time = "2025-02-24T07:16:25.363Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/70/98/d82f14ac7ffedbd38dfa2383f142b26d18d23ca6cf35a40f4af60df666bd/sh-2.2.2-py3-none-any.whl", hash = "sha256:e0b15b4ae8ffcd399bc8ffddcbd770a43c7a70a24b16773fbb34c001ad5d52af", size = 38295, upload-time = "2025-02-24T07:16:23.782Z" },
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/58/15/8b3609fd3830ef7b27b655beb4b4e9c62313a4e8da8c676e142cc210d58e/shellingham-1.5.4.tar.gz", hash = "sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de", size = 10310, upload-time = "2023-10-24T04:13:40.426Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686", size = 9755, upload-time = "2023-10-24T04:13:38.866Z" },
+]
+
+[[package]]
+name = "shx"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/8a/d886c8b0469a954f59adf5b184dbae520d3c01e77427914c0ae7dcb5d476/shx-0.4.2.tar.gz", hash = "sha256:bf7894d36d43fb07d550239c3364b4faf3e5d6a47f2c6e56891d53c1ce9c23a8", size = 5716, upload-time = "2023-10-14T22:36:27.952Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/62/078cc58b4fcac34cb234ad856900d26664eda810b7d84cf99fc3366f66ea/shx-0.4.2-py3-none-any.whl", hash = "sha256:69f2424b77069edf23873ecce88af47bff1e1ad78595cc4e3301290c9497edd4", size = 6192, upload-time = "2023-10-14T22:36:26.581Z" },
 ]
 
 [[package]]
