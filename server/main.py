@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from api import router as api_router
 
 app = FastAPI()
 
@@ -24,10 +25,8 @@ async def root():
     return FileResponse(os.path.join(frontend_dist_path, "index.html"))
 
 
-# API 路由（必须放在静态挂载之后，但放在 catch-all 之前）
-@app.get("/api/hello")
-async def hello():
-    return {"message": "Hello from FastAPI"}
+# API 路由
+app.include_router(api_router, prefix="/api")
 
 
 # 最后：catch-all 路由，用于前端 SPA 的 history 模式
