@@ -3,13 +3,17 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from api import router as api_router
+
+from .api import router as api_router
+from .storage import init_db
+
+init_db()
 
 app = FastAPI()
 
 # 静态资源挂载（前端构建后的 assets 目录）
 # 注意：路径是相对于当前 main.py 的位置（server 目录）
-frontend_dist_path = "../client/dist"
+frontend_dist_path = "./client/dist"
 
 # 挂载 /assets 目录（前端构建后的静态资源）
 app.mount(
@@ -40,6 +44,4 @@ async def serve_spa(full_path: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     else:
-        return {
-            "detail": "Frontend not built yet. Run 'npm run build' in client directory."
-        }
+        return {"detail": "Frontend not built yet. Run 'npm run build' in client directory."}
