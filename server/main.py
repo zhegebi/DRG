@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -11,13 +12,18 @@ init_db()
 
 app = FastAPI()
 
-# 静态资源挂载（前端构建后的 assets 目录）
-frontend_dist_path = "./client/dist"
+frontend_dist_path = Path("./client/dist")
+if not frontend_dist_path.exists():
+    frontend_dist_path.mkdir(parents=True, exist_ok=True)
+
+frontend_assets_path = frontend_dist_path / "assets"
+if not frontend_assets_path.exists():
+    frontend_assets_path.mkdir(parents=True, exist_ok=True)
 
 # 挂载 /assets 目录（前端构建后的静态资源）
 app.mount(
     "/assets",
-    StaticFiles(directory=os.path.join(frontend_dist_path, "assets")),
+    StaticFiles(directory=frontend_assets_path),
     name="assets",
 )
 
@@ -25,7 +31,7 @@ app.mount(
 # 根路径路由
 @app.get("/")
 async def root():
-    return FileResponse(os.path.join(frontend_dist_path, "index.html"))
+    return FileResponse(frontend_dist_path / "index.html")
 
 
 # API 路由
