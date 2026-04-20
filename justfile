@@ -5,9 +5,11 @@ root              := justfile_directory()
 server_dir        := root / "server"
 client_dir        := root / "client"
 client_output_dir := client_dir / "dist"
+openapi_file   := server_dir / "openapi.json"
 
-# 跨平台的命令连接符：Unix 用 &&，Windows 用 ;
+# 跨平台工具命令
 and := if os_family() == "windows" { ";" } else { "&&" }
+rm := if os_family() == "windows" { "cmd /c del /q /f" } else { "rm -f" }
 
 # 列出所有recipe
 list:
@@ -55,3 +57,13 @@ clean:
     if exist "{{client_output_dir}}" rmdir /s /q "{{client_output_dir}}"
     for /d /r . %d in (__pycache__) do @if exist "%d" rmdir /s /q "%d"
 alias cl := clean
+
+# 自动根据后端接口定义生成前端 API 客户端代码
+gen: 
+    @echo "Extracting OpenAPI spec from FastAPI app..."
+    cd "{{server_dir}}" && uv run python -c \
+        "import json; from main import app; print(json.dumps(app.openapi()))" > "{{openapi_file}}"
+    @echo "Generating Frontend API client..."
+    cd "{{client_dir}}" && npx openapi-ts -i ../server/openapi.json -o src/api -c @hey-api/client-axios
+    {{rm}} "{{openapi_file}}"
+alias g := gen
