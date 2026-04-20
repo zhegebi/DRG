@@ -3,7 +3,11 @@ name = "drg-server"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = "==3.13.*"
-dependencies = ["fastapi[standard]>=0.136.0"]
+dependencies = [
+    "fastapi[standard]>=0.136.0",
+    "pydantic>=2.13.2",
+    "sqlmodel>=0.0.38",
+]
 
 [dependency-groups]
 dev = ["ruff>=0.14.9", "stats-code>=0.1.5", "ty>=0.0.31"]
