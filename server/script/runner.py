@@ -52,19 +52,28 @@ def kill_process(proc):
                 subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
 
 def dev():
-    """开发模式：同时启动前端 dev server 和后端 uvicorn --reload"""
+    """开发模式：先构建前端，再启动后端（托管静态文件）和前端 dev server"""
     print("🚀 启动开发模式...")
-    print("   前端: http://localhost:5173")
-    print("   后端: http://localhost:8000")
+    print("   1. 构建前端项目（确保后端可访问静态文件）")
+    build_cmd = ["npm", "run", "build"]
+    build_proc = run_command(build_cmd, cwd=CLIENT_DIR)
+    build_proc.wait()
+    if build_proc.returncode != 0:
+        print("❌ 前端构建失败")
+        sys.exit(1)
+    print("✅ 前端构建完成")
+
+    print("   前端开发服务器: http://localhost:5173")
+    print("   后端服务器: http://localhost:8000")
     print("   按 Ctrl+C 停止\n")
 
-    # 启动后端
+    # 启动后端（托管构建后的静态文件）
     backend_cmd = ["uvicorn", "main:app", "--reload", "--port", "8000"]
     backend_proc = run_command(backend_cmd, cwd=SERVER_DIR)
 
     time.sleep(1)  # 等待后端初始化
 
-    # 启动前端
+    # 启动前端开发服务器（用于热重载）
     frontend_cmd = ["npm", "run", "dev"]
     frontend_proc = run_command(frontend_cmd, cwd=CLIENT_DIR)
 
