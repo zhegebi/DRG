@@ -32,7 +32,7 @@ export const rootGet = <ThrowOnError extends boolean = false>(options?: Options<
  */
 export const helloApiHelloGet = <ThrowOnError extends boolean = false>(options?: Options<HelloApiHelloGetData, ThrowOnError>) => (options?.client ?? client).get<HelloApiHelloGetResponses, unknown, ThrowOnError>({
     responseType: 'json',
-    url: '/api/hello',
+    url: '/api/hello/',
     ...options
 });
 

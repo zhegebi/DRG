@@ -60,7 +60,7 @@ export type HelloApiHelloGetData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/hello';
+    url: '/api/hello/';
 };
 
 export type HelloApiHelloGetResponses = {

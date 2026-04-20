@@ -19,3 +19,4 @@ env/
 .Ds_Store
 
 data/
+openapi.json

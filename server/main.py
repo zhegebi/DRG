@@ -12,7 +12,6 @@ init_db()
 app = FastAPI()
 
 # 静态资源挂载（前端构建后的 assets 目录）
-# 注意：路径是相对于当前 main.py 的位置（server 目录）
 frontend_dist_path = "./client/dist"
 
 # 挂载 /assets 目录（前端构建后的静态资源）

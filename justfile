@@ -7,28 +7,28 @@ client_dir        := root / "client"
 client_output_dir := client_dir / "dist"
 openapi_file      := server_dir / "openapi.json"
 
-# 跨平台工具
+# cross-platform tools
 and := if os_family() == "windows" { ";" } else { "&&" }
 
-# 列出所有recipe
+# List all recipe
 list:
     @just --list --unsorted
 alias l := list
 
-# 安装所有依赖
+# Install dependencies
 install:
     cd "{{client_dir}}" {{and}} npm install
     uv sync
 alias i := install
 
-# 格式检查
+# Format and type check
 check:
     cd "{{client_dir}}" {{and}} npm run type-check
     uv run ruff check
     uv run ty check
 alias ck := check
 
-# 开发模式：前端热重载 + 后端热重载
+# Dev mode: support hot reload for both frontend and backend
 [parallel]
 dev: _dev-frontend _dev-backend
 alias d := dev
@@ -37,27 +37,32 @@ _dev-frontend:
     cd "{{client_dir}}" {{and}} npm run dev
 
 _dev-backend:
-    cd "{{server_dir}}" {{and}} uv run uvicorn main:app --reload --port 8000
+    uv run uvicorn server.main:app --reload --port 8000
 
-# 生产模式：构建前端并启动后端托管
+# Production mode: build frontend and run server
 prod:
     cd "{{client_dir}}" {{and}} npm run build
-    cd "{{server_dir}}" {{and}} uv run uvicorn main:app --port 8000
+    uv run uvicorn server.main:app --port 8000
 alias p := prod
 
-# 清理构建产物
+# Clean build artifacts and cache
 clean:
-    @echo "Cleaning artifacts..."
     npx shx rm -rf "{{client_output_dir}}"
     npx shx rm -rf "**/__pycache__"
 alias cl := clean
 
-# 自动根据后端接口定义生成前端 API 客户端代码
+extract_script := "
+import json
+from server.main import app
+with open('" + openapi_file + "', 'w', encoding='utf-8') as f:
+    json.dump(app.openapi(), f)
+"
+
+# Generate API client from OpenAPI spec
 gen: 
-    @echo "Extracting OpenAPI spec from FastAPI app..."
-    cd "{{server_dir}}" {{and}} uv run python -c \
-        "import json; from main import app; print(json.dumps(app.openapi()))" > "{{openapi_file}}"
-    @echo "Generating Frontend API client..."
+    # Extracting OpenAPI spec from FastAPI app..."
+    uv run python -c "{{extract_script}}"
+    # Generating Frontend API client...
     cd "{{client_dir}}" {{and}} npx openapi-ts -i ../server/openapi.json -o src/api -c @hey-api/client-axios
     npx shx rm -f "{{openapi_file}}"
 alias g := gen
