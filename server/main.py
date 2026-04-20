@@ -1,9 +1,8 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 import os
 
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
@@ -18,10 +17,12 @@ app.mount(
     name="assets",
 )
 
+
 # 根路径路由
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(frontend_dist_path, "index.html"))
+
 
 # API 路由（必须放在静态挂载之后，但放在 catch-all 之前）
 @app.get("/api/hello")
@@ -40,4 +41,6 @@ async def serve_spa(full_path: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     else:
-        return {"detail": "Frontend not built yet. Run 'npm run build' in client directory."}
+        return {
+            "detail": "Frontend not built yet. Run 'npm run build' in client directory."
+        }

@@ -1,2 +1,19 @@
 # IDE
-.vscode/
+# .vscode/
+
+# Byte-compiled / optimized / DLL files / package information
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+
+.Ds_Store
