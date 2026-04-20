@@ -29,3 +29,13 @@ just prod
 ```bash
 just clean
 ```
+
+### 生成前端 API 客户端代码
+```bash
+just gen
+```
+
+### 代码检查
+```bash
+just check
+```
