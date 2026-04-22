@@ -15,6 +15,56 @@ export type HttpValidationError = {
 };
 
 /**
+ * LoginRequest
+ */
+export type LoginRequest = {
+    /**
+     * Type
+     */
+    type: 'username' | 'email';
+    /**
+     * Identifier
+     */
+    identifier: string;
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * SignupRequest
+ */
+export type SignupRequest = {
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * TokenResponse
+ */
+export type TokenResponse = {
+    /**
+     * Access Token
+     */
+    access_token: string;
+    /**
+     * Token Type
+     */
+    token_type?: string;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -42,58 +92,129 @@ export type ValidationError = {
     };
 };
 
-export type RootGetData = {
+export type RootAssetsGetData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/';
+    url: '/assets/';
 };
 
-export type RootGetResponses = {
+export type RootAssetsGetResponses = {
     /**
      * Successful Response
      */
     200: unknown;
 };
 
-export type HelloApiHelloGetData = {
-    body?: never;
+export type SignupAuthSignupPostData = {
+    body: SignupRequest;
     path?: never;
     query?: never;
-    url: '/api/hello/';
+    url: '/auth/signup';
 };
 
-export type HelloApiHelloGetResponses = {
+export type SignupAuthSignupPostErrors = {
+    /**
+     * Username or email already registered
+     */
+    400: unknown;
+    /**
+     * Invalid username or password
+     */
+    422: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type SignupAuthSignupPostResponses = {
     /**
      * Successful Response
      */
-    200: unknown;
+    200: TokenResponse;
+    /**
+     * User created successfully
+     */
+    201: unknown;
 };
 
-export type ServeSpaFullPathGetData = {
-    body?: never;
-    path: {
-        /**
-         * Full Path
-         */
-        full_path: string;
-    };
+export type SignupAuthSignupPostResponse = SignupAuthSignupPostResponses[keyof SignupAuthSignupPostResponses];
+
+export type LoginAuthLoginPostData = {
+    body: LoginRequest;
+    path?: never;
     query?: never;
-    url: '/{full_path}';
+    url: '/auth/login';
 };
 
-export type ServeSpaFullPathGetErrors = {
+export type LoginAuthLoginPostErrors = {
+    /**
+     * Invalid username or password
+     */
+    401: unknown;
     /**
      * Validation Error
      */
     422: HttpValidationError;
-};
-
-export type ServeSpaFullPathGetError = ServeSpaFullPathGetErrors[keyof ServeSpaFullPathGetErrors];
-
-export type ServeSpaFullPathGetResponses = {
     /**
-     * Successful Response
+     * Internal server error
      */
-    200: unknown;
+    500: unknown;
 };
+
+export type LoginAuthLoginPostError = LoginAuthLoginPostErrors[keyof LoginAuthLoginPostErrors];
+
+export type LoginAuthLoginPostResponses = {
+    /**
+     * Login successful
+     */
+    200: TokenResponse;
+};
+
+export type LoginAuthLoginPostResponse = LoginAuthLoginPostResponses[keyof LoginAuthLoginPostResponses];
+
+export type RefreshAccessTokenAuthRefreshPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/refresh';
+};
+
+export type RefreshAccessTokenAuthRefreshPostErrors = {
+    /**
+     * Invalid refresh token
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type RefreshAccessTokenAuthRefreshPostResponses = {
+    /**
+     * Access token refreshed successfully
+     */
+    200: TokenResponse;
+};
+
+export type RefreshAccessTokenAuthRefreshPostResponse = RefreshAccessTokenAuthRefreshPostResponses[keyof RefreshAccessTokenAuthRefreshPostResponses];
+
+export type LogoutAuthLogoutPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/logout';
+};
+
+export type LogoutAuthLogoutPostResponses = {
+    /**
+     * Response Logout Auth Logout Post
+     *
+     * Logged out successfully
+     */
+    200: 'Logged out successfully';
+};
+
+export type LogoutAuthLogoutPostResponse = LogoutAuthLogoutPostResponses[keyof LogoutAuthLogoutPostResponses];

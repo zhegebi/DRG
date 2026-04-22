@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { HelloApiHelloGetData, HelloApiHelloGetResponses, RootGetData, RootGetResponses, ServeSpaFullPathGetData, ServeSpaFullPathGetErrors, ServeSpaFullPathGetResponses } from './types.gen';
+import type { LoginAuthLoginPostData, LoginAuthLoginPostErrors, LoginAuthLoginPostResponses, LogoutAuthLogoutPostData, LogoutAuthLogoutPostResponses, RefreshAccessTokenAuthRefreshPostData, RefreshAccessTokenAuthRefreshPostErrors, RefreshAccessTokenAuthRefreshPostResponses, RootAssetsGetData, RootAssetsGetResponses, SignupAuthSignupPostData, SignupAuthSignupPostErrors, SignupAuthSignupPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -21,26 +21,60 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 /**
  * Root
  */
-export const rootGet = <ThrowOnError extends boolean = false>(options?: Options<RootGetData, ThrowOnError>) => (options?.client ?? client).get<RootGetResponses, unknown, ThrowOnError>({
+export const rootAssetsGet = <ThrowOnError extends boolean = false>(options?: Options<RootAssetsGetData, ThrowOnError>) => (options?.client ?? client).get<RootAssetsGetResponses, unknown, ThrowOnError>({
     responseType: 'json',
-    url: '/',
+    url: '/assets/',
     ...options
 });
 
 /**
- * Hello
+ * Signup
+ *
+ * sign up a new user, return a JWT token (no need to login again)
  */
-export const helloApiHelloGet = <ThrowOnError extends boolean = false>(options?: Options<HelloApiHelloGetData, ThrowOnError>) => (options?.client ?? client).get<HelloApiHelloGetResponses, unknown, ThrowOnError>({
+export const signupAuthSignupPost = <ThrowOnError extends boolean = false>(options: Options<SignupAuthSignupPostData, ThrowOnError>) => (options.client ?? client).post<SignupAuthSignupPostResponses, SignupAuthSignupPostErrors, ThrowOnError>({
     responseType: 'json',
-    url: '/api/hello/',
+    url: '/auth/signup',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Login
+ *
+ * Login user and return JWT tokens
+ */
+export const loginAuthLoginPost = <ThrowOnError extends boolean = false>(options: Options<LoginAuthLoginPostData, ThrowOnError>) => (options.client ?? client).post<LoginAuthLoginPostResponses, LoginAuthLoginPostErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/auth/login',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Refresh Access Token
+ *
+ * Use Refresh Token to get a new Access Token if access token expired
+ */
+export const refreshAccessTokenAuthRefreshPost = <ThrowOnError extends boolean = false>(options?: Options<RefreshAccessTokenAuthRefreshPostData, ThrowOnError>) => (options?.client ?? client).post<RefreshAccessTokenAuthRefreshPostResponses, RefreshAccessTokenAuthRefreshPostErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/auth/refresh',
     ...options
 });
 
 /**
- * Serve Spa
+ * Logout
+ *
+ * Logout user by clearing the Refresh Token
  */
-export const serveSpaFullPathGet = <ThrowOnError extends boolean = false>(options: Options<ServeSpaFullPathGetData, ThrowOnError>) => (options.client ?? client).get<ServeSpaFullPathGetResponses, ServeSpaFullPathGetErrors, ThrowOnError>({
+export const logoutAuthLogoutPost = <ThrowOnError extends boolean = false>(options?: Options<LogoutAuthLogoutPostData, ThrowOnError>) => (options?.client ?? client).post<LogoutAuthLogoutPostResponses, unknown, ThrowOnError>({
     responseType: 'json',
-    url: '/{full_path}',
+    url: '/auth/logout',
     ...options
 });
