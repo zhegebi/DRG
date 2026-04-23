@@ -18,6 +18,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-app.include_router(static_router)
 app.include_router(auth_router)
+app.include_router(static_router)  # keep static router at the end
 mount_static(app)

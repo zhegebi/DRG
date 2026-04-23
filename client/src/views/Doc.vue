@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+    console.log("Doc page loaded")
 </script>
 <template>
     <div>

@@ -1,26 +1,19 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import Home from '../views/Home.vue'
-import DocGen from '../views/DocGen.vue'
-import DRG from '../views/DRG.vue'
 const routes: Array<RouteRecordRaw> = [
     {
-        path:'/',
-        redirect:'/home'
-    },
-    {
-        path:'/home',
+        path: '/',
         name: 'home',
-        component: Home
+        component: () => import('../views/Home.vue')
     },
     {
-        path:'/DocGen',
+        path: '/DocGen',
         name: 'docgen',
-        component: DocGen
+        component: () => import('../views/Doc.vue')
     },
     {
-        path:'/DRG',
+        path: '/DRG',
         name: 'drg',
-        component: DRG
+        component: () => import('../views/DRG.vue')
     }
 ]
 

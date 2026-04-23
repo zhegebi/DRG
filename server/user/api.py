@@ -10,7 +10,7 @@ from ..db.utils import get_async_session
 from .auth import AuthUtils
 from .table import User
 
-router = APIRouter(prefix="/auth")
+router = APIRouter(prefix="/api/auth")
 
 USER_REFRESH_COOKIE_KEY = "refresh_token"
 
