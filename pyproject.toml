@@ -20,4 +20,3 @@ dev = ["ruff>=0.14.9", "stats-code>=0.1.5", "ty>=0.0.31"]
 line-length = 120
 target-version = "py313"
 include = ["server/**/*.py"]
-exclude = ["_*.py"]

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .db import init_db
-from .static import init_assets
+from .static import init_assets, mount_static
 from .static import router as static_router
 from .user.api import router as auth_router
 
@@ -20,3 +20,4 @@ app = FastAPI(lifespan=lifespan)
 
 app.include_router(static_router)
 app.include_router(auth_router)
+mount_static(app)

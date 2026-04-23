@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -8,7 +8,7 @@ from .config import FRONTEND_ASSETS_DIR, FRONTEND_DIR
 The module to provide static assets apis.
 """
 
-router = APIRouter(prefix="/assets")
+router = APIRouter()
 
 
 def init_assets():
@@ -19,11 +19,12 @@ def init_assets():
         FRONTEND_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-router.mount(
-    "/assets",
-    StaticFiles(directory=FRONTEND_ASSETS_DIR),
-    name="assets",
-)
+def mount_static(app: FastAPI):
+    app.mount(
+        "/assets",
+        StaticFiles(directory=FRONTEND_ASSETS_DIR),
+        name="assets",
+    )
 
 
 @router.get("/")
