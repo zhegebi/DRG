@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from dotenv import load_dotenv
 
 from .db import init_db
 from .static import init_assets, mount_static
@@ -12,6 +13,7 @@ from .user.api import router as auth_router
 async def lifespan(app: FastAPI):
     init_db()
     init_assets()
+    load_dotenv()
     yield
     # nothing to clean up on shutdown for now
 

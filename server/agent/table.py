@@ -4,7 +4,7 @@ from enum import Enum
 
 from sqlmodel import Field, SQLModel, JSON
 
-__all__ = ["Agent", "Tasks", "Substeps"]
+__all__ = ["Agent", "Tasks", "Substeps", "TaskStatus", "SubstepStatus", "StepType"]
 
 
 # ---------- Enum Definitions ----------
