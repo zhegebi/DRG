@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from string import ascii_letters, digits, punctuation
 
+from dotenv import load_dotenv
+
 """
 This file defines the configuration of whole DRG server.
 """
@@ -28,3 +30,7 @@ PASSWORD_ALLOWED_CHARS = set(ascii_letters + digits + punctuation)
 # frontend assets configuration
 FRONTEND_DIR = Path("./client/dist")
 FRONTEND_ASSETS_DIR = FRONTEND_DIR / "assets"
+
+# .env variables
+load_dotenv()
+API_KEY = os.getenv("API_KEY")
