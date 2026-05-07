@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import Home from '../views/Home/Home.vue' 
+
 const routes: Array<RouteRecordRaw> = [
     {
         path: '/',
         name: 'home',
-        component: () => import('../views/Home.vue')
+        component: Home
     },
     {
         path: '/DocGen',
