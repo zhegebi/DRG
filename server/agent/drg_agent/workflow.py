@@ -28,13 +28,13 @@ EXTRACT_MEDICAL_RECORD_SYSTEM_PROMPT = """
 2. 次要诊断（secondary_diagnosis_list）：文本中明确标记为“次要诊断”或类似含义的疾病，或者是“主要诊断”以外的其他诊断。
 3. 主要手术（primary_procedure）：文本中明确标记为“主要手术”或最核心的手术操作。
 4. 其他手术（other_procedures）：除主要手术外的其他手术或操作。
-5. 每个诊断/手术对象必须包含code和name字段。如果文本中未提供编码，则code字段设为null，但name必须尽力提取（一定要使用病历中一模一样的名称，尤其要注意那些虚词，比如'的'这类的一定要一样）。
+5. 每个诊断/手术对象必须包含code和name字段。如果文本中未提供编码，则code字段设为null，但name必须尽力提取（一定要使用病历中一模一样的名称，尤其要注意那些虚词，比如'的'这类的一定要一样，另外如果是中文和其他字符之间的空格，需要去掉它，其他情况的空格需要一模一样保留）。
 6. 如果某个列表没有内容，返回空列表[]。
 7. 只输出JSON，不要输出任何其他文本或解释。
 """
 def extract_medical_record_info(medical_record_text: str) -> models.MedicalRecord:
+    # 1. 调用API
     try:
-        # 1. 调用API
         response = client.chat.completions.create(
             model = "deepseek-v4-pro",
             messages = [
@@ -47,7 +47,7 @@ def extract_medical_record_info(medical_record_text: str) -> models.MedicalRecor
     except Exception as e:
         logger.error(f"Error calling DeepSeek API: {e}")
         raise e
-        # 2. 解析响应
+    # 2. 解析响应
     try:
         content = response.choices[0].message.content
         medical_record = models.MedicalRecord.model_validate_json(content)

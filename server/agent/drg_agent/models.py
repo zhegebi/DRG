@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Dict, List, Optional
 from enum import Enum
 from pathlib import Path
@@ -24,12 +24,7 @@ class ProcedureToAdrgResult(BaseModel):
 
 class MccAndCcData(BaseModel):
     code: str
-    name: str
     exclusion_table: str
-
-class ExclusionTableData(BaseModel):
-    diag_code: str = Field(alias="code")
-    diag_name: str = Field(alias="name")
 
 
 class MdcAdrgDrg(BaseModel):
@@ -78,13 +73,29 @@ class MccAndCc(BaseModel):
         mcc: [mcc_data],
         cc: [cc_data],
         exclusion_tables: {
-            "表xxxx": [exclusion_table_data]
+            "表xxxx": ["diag_code"]
         }
     }
     """
     mcc: List[MccAndCcData]
     cc: List[MccAndCcData]
-    exclusion_tables: Dict[str, List[ExclusionTableData]]
+    exclusion_tables: Dict[str, List[str]]
+
+class NameToCode(BaseModel):
+    """
+    {
+        "diagnosis": 
+        {
+            "name": "code"
+        },
+        "procedure":
+        {
+            "name": "code"
+        }
+    }
+    """
+    diagnosis: Dict[str, str]
+    procedure: Dict[str, str]
 
 
 ################ medical record models ################
@@ -124,3 +135,6 @@ PROCEDURE_TO_ADRG = ProcedureToAdrg.model_validate_json(procedure_to_adrg_json)
 
 mcc_and_cc_json = load_data(CURRENT_DIR / "MCC_and_CC.json")
 MCC_AND_CC = MccAndCc.model_validate_json(mcc_and_cc_json)
+
+name_to_code_json = load_data(CURRENT_DIR / "name_to_code.json")
+NAME_TO_CODE = NameToCode.model_validate_json(name_to_code_json)
