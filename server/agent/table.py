@@ -1,29 +1,16 @@
-from typing import Optional
-
-from sqlmodel import Field, SQLModel
+from typing import Optional, Dict
+from sqlmodel import Field, SQLModel, JSON, Column
+import uuid
 from enum import Enum
 
-__all__ = ["Agent", "DrgResult", "Complication"]
+__all__ = ["Agent", "DrgTask", "TaskStatus"]
 
 
-class Complication(str, Enum):
-    CC = "cc"
-    MCC = "mcc"
-    NO = "no"
 
-
-class DrgResult(SQLModel, table = True):
-    """
-    DrgResult model representing a DRG result in database.
-    This is generated when system runs.
-    """
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    mdc: str
-    adrg: str
-    drg: str
-    complication: Complication
-    reason: str
+class TaskStatus(str, Enum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED  = "failed"
 
 class Agent(SQLModel, table=True):
     """
@@ -34,3 +21,13 @@ class Agent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     description: str
+
+class DrgTask(SQLModel, table=True):
+    """
+    DrgTask model representing a DRG task in database.
+    This is generated when system runs.
+    """
+    task_id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str
+    result: Optional[Dict] = Field(default=None, sa_column=Column(JSON)) # the format is DrgResult in models.py
+    status: TaskStatus = TaskStatus.RUNNING

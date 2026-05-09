@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 from enum import Enum
 from pathlib import Path
 
@@ -105,7 +105,7 @@ class GeneralInformation(BaseModel):
     diagnosis and procedure data structure
     """
     code: Optional[str] = None
-    name: Optional[str] = None
+    name: str
 
 
 class MedicalRecord(BaseModel):
@@ -113,6 +113,13 @@ class MedicalRecord(BaseModel):
     secondary_diagnosis_list: List[GeneralInformation] = []
     primary_procedure: GeneralInformation
     other_procedures: List[GeneralInformation] = []
+
+class DrgResult(BaseModel):
+    mdc: str
+    adrg: str
+    drg: str
+    complication: Literal[Complication.CC, Complication.MCC, Complication.NO]
+    reason: str
 
 
 
