@@ -121,6 +121,11 @@ class DrgResult(BaseModel):
     complication: Literal[Complication.CC, Complication.MCC, Complication.NO]
     reason: str
 
+class DrgTestCase(BaseModel):
+    medical_record_text: str
+    expected_result: DrgResult
+    test_result: DrgResult
+
 
 
 # load drg rule data from json file
@@ -129,19 +134,19 @@ def load_data(path: Path):
         data_json = f.read()
     return data_json
 
-CURRENT_DIR = Path(__file__).parent
+DRG_RULES_DIR = Path(__file__).parent / "drg_rules"
 
-mdc_adrg_drg_json = load_data(CURRENT_DIR / "mdc_adrg_drg.json")
+mdc_adrg_drg_json = load_data(DRG_RULES_DIR / "mdc_adrg_drg.json")
 MDC_ADRG_DRG = MdcAdrgDrg.model_validate_json(mdc_adrg_drg_json)
 
-diag_to_mdc_json = load_data(CURRENT_DIR / "diagnosis_to_mdc.json")
+diag_to_mdc_json = load_data(DRG_RULES_DIR / "diagnosis_to_mdc.json")
 DIAG_TO_MDC = DiagToMdc.model_validate_json(diag_to_mdc_json)
 
-procedure_to_adrg_json = load_data(CURRENT_DIR / "procedure_to_adrg.json")
+procedure_to_adrg_json = load_data(DRG_RULES_DIR / "procedure_to_adrg.json")
 PROCEDURE_TO_ADRG = ProcedureToAdrg.model_validate_json(procedure_to_adrg_json)
 
-mcc_and_cc_json = load_data(CURRENT_DIR / "MCC_and_CC.json")
+mcc_and_cc_json = load_data(DRG_RULES_DIR / "MCC_and_CC.json")
 MCC_AND_CC = MccAndCc.model_validate_json(mcc_and_cc_json)
 
-name_to_code_json = load_data(CURRENT_DIR / "name_to_code.json")
+name_to_code_json = load_data(DRG_RULES_DIR / "name_to_code.json")
 NAME_TO_CODE = NameToCode.model_validate_json(name_to_code_json)
