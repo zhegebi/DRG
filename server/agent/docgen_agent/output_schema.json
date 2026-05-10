@@ -1,0 +1,666 @@
+{
+  "supported_output_formats": [
+    "markdown",
+    "pdf",
+    "docx"
+  ],
+  "default_output_format": "markdown",
+  "layout_spec_reference": "文档结构与内容规范定义在本文件中。排版、字体大小、页边距等视觉布局规范应在另外的布局规范文件中说明。",
+  "rendering_conventions": {
+    "auto_caption": true,
+    "figure_caption_prefix": "图",
+    "table_caption_prefix": "表",
+    "caption_position": "下方",
+    "numbering_scope": "全局",
+    "caption_format": "{prefix}{number}：{caption}",
+    "caption_proximity": "与对应说明文本相近",
+    "diagram_placement": "图表应在相关文字说明附近，并保持阅读顺序一致",
+    "note_file_for_omissions": "当智能体判断无法生成或决定不生成某些内容时，应在生成日志或单独报告文件中说明，不直接写入最终交付文档。"
+  },
+  "global_tips": "文档生成智能体需遵守以下规则：1）章节中 required: true 的内容必须生成，缺少信息时应尽力推断或使用默认模板；2）required: false 的章节，仅当现存资料（代码、需求文本、规则文件等）不足以撰写任何合理内容时才可以省略，并且必须在文档末尾或该章节原位置输出一段说明，解释为何无法填写（例如缺少相关需求或设计信息）；3）若资料足够，即使 required: false 也应尽量生成；4）若章节要求图表，必须根据真实项目资料生成图表或图表描述，不能凭空捏造；5）图表、表格应靠近其对应文字说明，具有逻辑关联并保持适当的阅读顺序；信息不足时要说明不绘制图表；6）版本号、日期等元数据由智能体根据当前时间自动生成，不依赖本配置。",
+  "documents": [
+    {
+      "doc_type": "需求规格说明书",
+      "file_name_pattern": "需求规格说明书.{format}",
+      "format_note": "用户可从 supported_output_formats 中选择输出格式，智能体需判断所选格式是否在列表中。",
+      "tips": "本模板基于 IEEE 830 标准。章节中 required: true 表示必须生成的内容，required: false 表示可选，但只有确无资料时才可省略。智能体可根据项目实际情况增删 optional 的子章节。",
+      "structure": {
+        "title": "需求规格说明书",
+        "description": "描述软件系统的功能需求、非功能需求、接口需求和约束条件。",
+        "sections": [
+          {
+            "level": 1,
+            "title": "引言",
+            "description": "介绍文档的目的、范围、术语和参考文献。",
+            "required": true,
+            "tips": "引言部分应简明扼要，为读者提供文档背景。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "目的",
+                "description": "说明编写本说明书的目的和预期读者。",
+                "required": true,
+                "tips": "可结合项目背景和用户角色描述。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "范围",
+                "description": "定义系统的边界、主要功能以及不包含的内容。",
+                "required": true,
+                "tips": "明确系统做什么和不做什么，可使用列表形式。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "定义、缩写词和术语",
+                "description": "列出文档中使用的专业术语、缩写及其解释。",
+                "required": true,
+                "tips": "建议按字母顺序排列，术语定义清晰。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "参考资料",
+                "description": "列出编写文档时依据的参考文献、标准或项目文件。",
+                "required": false,
+                "tips": "如有明确的外部标准或文档，可列出；否则可省略。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "总体描述",
+            "description": "从宏观角度描述系统的整体功能、用户特征、约束和假设。",
+            "required": true,
+            "tips": "这一章为后续具体需求提供上下文。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "系统整体功能",
+                "description": "概括系统要解决的核心问题和高层能力。",
+                "required": true,
+                "diagram": true,
+                "tips": "可用一段文字或列表概括，不涉及细节。建议同时提供基于项目实际功能的用例图或功能分布概览图，图表必须基于真实需求信息。",
+                "tools": [
+                  "render_mermaid"
+                ]
+              },
+              {
+                "level": 2,
+                "title": "用户特征",
+                "description": "描述系统预期用户的角色、技术水平和使用模式。",
+                "required": true,
+                "tips": "区分不同用户类型，描述其技能等级和典型操作。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "约束条件",
+                "description": "开发环境、运行平台、预算、时间、技术选型等限制。",
+                "required": true,
+                "tips": "从项目需求或合同中提取强制性限制。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "假设与依赖",
+                "description": "系统设计所依赖的外部条件（如第三方服务、硬件资源）。",
+                "required": false,
+                "tips": "若存在重要的外部依赖或假设，务必说明；否则可省略。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "具体需求",
+            "description": "详细描述系统的各项需求，包括功能、性能、安全、接口等。",
+            "required": true,
+            "tips": "这是 SRS 的核心，应按类别组织，每条需求尽量可验证。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "功能需求",
+                "description": "按模块或用例描述每个功能，包括输入、处理逻辑、输出。建议使用 FR-XXX 编号。",
+                "required": true,
+                "tips": "每项功能需求应可独立测试，避免模糊描述。",
+                "tools": [],
+                "children": [
+                  {
+                    "level": 3,
+                    "title": "功能需求模板（可重复）",
+                    "description": "每个功能需求单独列为三级标题，内容包含：功能描述、输入、处理流程、输出、异常处理。",
+                    "required": true,
+                    "tips": "智能体应根据实际模块生成具体功能，而非保留模板标题。",
+                    "tools": []
+                  }
+                ]
+              },
+              {
+                "level": 2,
+                "title": "性能需求",
+                "description": "响应时间、吞吐量、并发用户数、资源占用等量化指标。",
+                "required": false,
+                "tips": "若需求文档中无明确性能指标，且无法推断，可省略并说明。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "安全性需求",
+                "description": "身份认证、权限控制、数据加密、审计日志等。",
+                "required": false,
+                "tips": "根据系统敏感程度确定，小型内部系统可能无特殊要求。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "可靠性需求",
+                "description": "系统可用性、MTBF、故障恢复时间、容错能力。",
+                "required": false,
+                "tips": "若无明确要求，可给出典型建议值或说明不适用。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "可维护性需求",
+                "description": "日志、监控、热更新、模块解耦等要求。",
+                "required": false,
+                "tips": "通常通用系统会隐含有基础可维护性要求，可默认生成常见条目。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "外部接口需求",
+                "description": "用户界面、硬件接口、软件接口（API）、通信协议。",
+                "required": false,
+                "tips": "如有明确的接口定义文档，应详细列出；否则至少说明接口类型。",
+                "tools": [],
+                "children": [
+                  {
+                    "level": 3,
+                    "title": "用户界面",
+                    "description": "UI 布局、交互方式、响应式要求。",
+                    "required": false,
+                    "tips": "若系统无图形界面（如纯API服务），可省略。",
+                    "tools": []
+                  },
+                  {
+                    "level": 3,
+                    "title": "软件接口",
+                    "description": "与其他系统或服务的 API 定义、数据格式。",
+                    "required": false,
+                    "diagram": true,
+                    "tips": "重点关注外部调用或组件间通信协议。建议补充接口调用流程图或消息交换图，图表必须基于实际接口定义。",
+                    "tools": [
+                      "render_mermaid"
+                    ]
+                  }
+                ]
+              },
+              {
+                "level": 2,
+                "title": "设计约束",
+                "description": "必需的编程语言、数据库、框架、开发方法等。",
+                "required": false,
+                "tips": "通常来源于客户或公司标准，若无强制性要求可省略。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "附录",
+            "description": "承载补充材料和需求跟踪矩阵。",
+            "required": false,
+            "tips": "附录内容不影响核心需求，但可提升文档完整度。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "需求跟踪矩阵",
+                "description": "功能需求与原始用户需求的映射关系。",
+                "required": false,
+                "tips": "如有原始需求ID，建议生成；否则可省略。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "待定需求清单",
+                "description": "尚未确认或在后续阶段补充的需求。",
+                "required": false,
+                "tips": "记录不明确或有争议的需求，便于后续讨论。",
+                "tools": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "doc_type": "架构设计文档",
+      "file_name_pattern": "架构设计文档.{format}",
+      "format_note": "用户可从 supported_output_formats 中选择输出格式，智能体需判断所选格式是否在列表中。",
+      "tips": "本模板参考 IEEE 1016 软件设计描述规范。required: true 的子章节为架构文档的核心内容，可选章节可根据系统规模酌情增减。架构图可使用文本描述或 Mermaid 代码块。",
+      "structure": {
+        "title": "架构设计文档",
+        "description": "描述软件系统的整体结构、模块划分、交互关系、技术选型和部署视图。",
+        "sections": [
+          {
+            "level": 1,
+            "title": "引言",
+            "description": "阐述文档目的、范围和设计目标。",
+            "required": true,
+            "tips": "简要说明本文档的定位和阅读对象。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "编写目的",
+                "description": "说明本文档的目标读者及作用。",
+                "required": true,
+                "tips": "通常包括开发人员、架构师、测试人员等。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "范围",
+                "description": "定义本文档覆盖的系统范围和设计层级。",
+                "required": true,
+                "tips": "明确本文档描述哪些模块，不涉及哪些细节。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "设计约束与目标",
+                "description": "影响架构决策的关键约束（性能、安全、成本等）和非功能性目标。",
+                "required": true,
+                "tips": "从需求文档中提取约束，若无则说明假设。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "总体结构",
+            "description": "系统最高层次的架构视图，包括模块分区和整体架构风格。",
+            "required": true,
+            "diagram": true,
+            "tips": "建议配合 Mermaid 或文本框图描述。若结构简单，可仅提供图表描述；若信息不足则说明不绘制图表。",
+            "tools": [
+              "render_mermaid"
+            ],
+            "children": [
+              {
+                "level": 2,
+                "title": "架构风格",
+                "description": "如分层架构、微服务、事件驱动等，并说明选择理由。",
+                "required": true,
+                "tips": "根据系统规模和需求分析得出，要解释为何适合本系统。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "系统上下文图",
+                "description": "描述系统与外部实体（用户、外部系统等）的交互关系。",
+                "required": true,
+                "diagram": true,
+                "tips": "可用文本描述或 Mermaid/ASCII 图，标明外部角色和系统边界。若结构非常简单，可仅给出图示描述；若信息不足则说明并不绘制图表。",
+                "tools": [
+                  "render_mermaid"
+                ]
+              },
+              {
+                "level": 2,
+                "title": "顶层模块划分",
+                "description": "列出所有一级模块及其职责概述。",
+                "required": true,
+                "tips": "每个模块应有明确职责，避免重叠。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "模块详细设计",
+            "description": "每个模块的内部结构、接口和依赖。",
+            "required": true,
+            "tips": "对于核心模块应详细描述，次要模块可简要概括。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "模块1（示例）",
+                "description": "可重复该结构，包含：模块职责、主要类/函数、对外接口、依赖的模块、关键数据结构。",
+                "required": true,
+                "tips": "智能体需根据实际代码或设计生成具体模块，而非保留示例标题。",
+                "tools": [],
+                "children": [
+                  {
+                    "level": 3,
+                    "title": "职责描述",
+                    "description": "模块的具体功能边界。",
+                    "required": true,
+                    "tips": "一句话概括该模块的核心任务。",
+                    "tools": []
+                  },
+                  {
+                    "level": 3,
+                    "title": "接口定义",
+                    "description": "输入、输出、异常说明。",
+                    "required": true,
+                    "tips": "包括函数签名、API 端点或消息格式。",
+                    "tools": []
+                  },
+                  {
+                    "level": 3,
+                    "title": "依赖与其他模块的交互",
+                    "description": "数据流或控制流关系。",
+                    "required": true,
+                    "diagram": true,
+                    "tips": "可使用序列图或文字描述。建议提供基于实际模块交互的组件图或流程图，图表必须基于真实系统交互关系。",
+                    "tools": [
+                      "render_mermaid"
+                    ]
+                  }
+                ]
+              },
+              {
+                "level": 2,
+                "title": "模块2（依此类推）",
+                "description": "重复模块1结构。",
+                "required": true,
+                "tips": "根据系统实际模块数量生成。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "数据设计",
+            "description": "持久化存储、数据模型、数据流。",
+            "required": false,
+            "tips": "仅当系统涉及复杂数据存储或流转时必要；简单系统可省略。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "数据库设计",
+                "description": "ER 图、核心表结构。",
+                "required": false,
+                "diagram": true,
+                "tips": "若有关系型数据库，应列出主要表和字段。应补充基于实际数据库结构的ER图或表关系图，图表必须基于真实数据模型。",
+                "tools": [
+                  "render_mermaid"
+                ]
+              },
+              {
+                "level": 2,
+                "title": "数据流图",
+                "description": "关键数据在模块间的流转路径。",
+                "required": false,
+                "diagram": true,
+                "tips": "可使用层级数据流图（DFD）。若系统信息简单则可只给出图表说明；若资料不足则说明无法绘制图表。",
+                "tools": [
+                  "render_mermaid"
+                ]
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "技术选型",
+            "description": "编程语言、框架、中间件、第三方库的选择和理由。",
+            "required": true,
+            "tips": "从代码依赖文件（如 requirements.txt, package.json）或项目配置中提取。",
+            "tools": []
+          },
+          {
+            "level": 1,
+            "title": "部署视图",
+            "description": "物理部署结构（服务器、容器、网络）和配置要求。",
+            "required": false,
+            "tips": "若系统为单体应用或开发环境简单，可省略；分布式系统必须描述。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "部署图",
+                "description": "节点与组件映射关系。",
+                "required": false,
+                "diagram": true,
+                "tips": "可用 Mermaid 绘制。若系统简单可给出部署关系描述；若缺少部署信息则说明不绘制图表。",
+                "tools": [
+                  "render_mermaid"
+                ]
+              },
+              {
+                "level": 2,
+                "title": "环境配置",
+                "description": "操作系统、依赖软件、环境变量等。",
+                "required": false,
+                "tips": "可参考现有部署脚本或文档。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "附录",
+            "description": "补充图表或设计决策记录。",
+            "required": false,
+            "tips": "用于存放不适合正文的详细设计记录。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "设计权衡记录",
+                "description": "记录重大技术选择的备选方案和取舍原因。",
+                "required": false,
+                "tips": "若有会议记录或设计笔记，可提取；否则可省略。",
+                "tools": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "doc_type": "测试文档",
+      "file_name_pattern": "测试文档.{format}",
+      "format_note": "用户可从 supported_output_formats 中选择输出格式，智能体需判断所选格式是否在列表中。",
+      "tips": "本模板参考 IEEE 829 软件测试文档标准。required: true 的子章节为测试文档的核心内容，其他可选章节可酌情添加。测试用例表格建议用 Markdown 表格形式。",
+      "structure": {
+        "title": "测试文档",
+        "description": "描述测试策略、测试方案、测试用例设计以及测试执行计划。",
+        "sections": [
+          {
+            "level": 1,
+            "title": "引言",
+            "description": "测试文档的范围、目标、适用对象。",
+            "required": true,
+            "tips": "清晰定义测试活动的整体范围。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "测试目的",
+                "description": "说明本次测试要验证的质量属性和目标。",
+                "required": true,
+                "tips": "例如验证功能正确性、性能达标、安全无漏洞等。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "测试范围",
+                "description": "明确哪些功能/模块被测试，哪些不在测试范围。",
+                "required": true,
+                "tips": "结合需求和架构，列出包含和不包含的项。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "测试策略",
+            "description": "各测试级别的策略、测试类型（功能、性能、安全等）以及通过/失败准则。",
+            "required": true,
+            "tips": "策略应具体且可执行。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "单元测试策略",
+                "description": "工具（如 pytest）、覆盖率要求、桩/模拟的使用。",
+                "required": true,
+                "tips": "根据语言和框架选择合适的工具，设定最低覆盖率。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "集成测试策略",
+                "description": "自底向上/自顶向下/大爆炸方式，接口测试方法。",
+                "required": true,
+                "tips": "重点验证模块间接口和依赖。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "系统测试策略",
+                "description": "功能测试、性能测试、安全测试、兼容性测试等。",
+                "required": true,
+                "tips": "根据需求列出的非功能要求设计对应测试类型。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "验收测试策略",
+                "description": "用户验收测试（UAT）的参与方式和通过标准。",
+                "required": false,
+                "tips": "通常由客户或用户执行，若项目无UAT环节可省略。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "测试环境与工具",
+            "description": "硬件、软件、网络配置以及测试工具链。",
+            "required": false,
+            "diagram": true,
+            "tips": "若环境与开发环境基本一致，可简化或省略。建议补充环境拓扑图或工具链架构图，图表必须基于实际测试环境信息。",
+            "tools": [
+              "render_mermaid"
+            ],
+            "children": [
+              {
+                "level": 2,
+                "title": "硬件环境",
+                "description": "服务器、客户端配置。",
+                "required": false,
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "软件环境",
+                "description": "操作系统、数据库、浏览器版本等。",
+                "required": false,
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "测试工具",
+                "description": "缺陷管理、自动化框架、性能压测工具。",
+                "required": false,
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "测试用例设计",
+            "description": "按场景组织的测试用例集合，包含正常、边界、异常场景。",
+            "required": true,
+            "tips": "可引用外部生成的测试用例文件，或直接在此处创建表格。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "正常场景测试用例",
+                "description": "典型输入产生预期输出的用例。建议以表格形式列出：用例ID、输入描述、预期结果、优先级。",
+                "required": true,
+                "tips": "应覆盖主要业务流程。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "边界场景测试用例",
+                "description": "极限值、空值、最大值等边界条件。",
+                "required": true,
+                "tips": "根据输入域和业务规则设计。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "异常场景测试用例",
+                "description": "无效输入、资源不足、网络中断等异常情况。",
+                "required": true,
+                "tips": "确保系统容错性。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "测试执行计划",
+            "description": "测试周期、资源分配、缺陷处理流程。",
+            "required": true,
+            "tips": "计划应可落地，明确责任人和时间节点。",
+            "tools": [],
+            "children": [
+              {
+                "level": 2,
+                "title": "时间与里程碑",
+                "description": "各测试阶段的起止时间。",
+                "required": true,
+                "diagram": true,
+                "tips": "若项目暂无明确计划，可给出建议时间表。建议补充时间线图或甘特图，图表必须基于实际测试阶段计划。",
+                "tools": [
+                  "render_mermaid"
+                ]
+              },
+              {
+                "level": 2,
+                "title": "角色与职责",
+                "description": "测试负责人、用例设计者、执行者的任务分配。",
+                "required": true,
+                "tips": "根据团队人员情况分配。",
+                "tools": []
+              },
+              {
+                "level": 2,
+                "title": "缺陷跟踪流程",
+                "description": "缺陷状态流转、严重等级定义。",
+                "required": true,
+                "tips": "可使用通用流程模板。",
+                "tools": []
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "title": "测试报告模板",
+            "description": "测试完成后的输出报告结构，包含执行统计、残留缺陷、质量评估。",
+            "required": false,
+            "tips": "若需要正式报告，可提供此模板；否则可省略。",
+            "tools": []
+          }
+        ]
+      }
+    }
+  ]
+}

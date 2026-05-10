@@ -1,0 +1,101 @@
+{
+  "description": "文档布局与排版规范，适用于需求规格说明书、架构设计文档、测试文档的最终输出渲染（PDF/DOCX 或带样式的 HTML/Markdown）。",
+  "target_formats": ["pdf", "docx", "html"],
+  "notes": "对于 Markdown 输出，部分样式（如缩进、行距、表格单元格垂直居中）需要后续转换工具（如 Pandoc、CSS）支持。智能体应在生成时嵌入样式指令或根据本规范生成符合要求的标记。",
+
+  "page_setup": {
+    "paper_size": "A4",
+    "margin_top": "2.54cm",
+    "margin_bottom": "2.54cm",
+    "margin_left": "3.17cm",
+    "margin_right": "3.17cm"
+  },
+
+  "font": {
+    "body_font": "宋体 / Times New Roman",
+    "title_font": "黑体 / Arial",
+    "base_size": "12pt"
+  },
+
+  "headings": {
+    "global": {
+      "alignment": "left",
+      "indent": "0",
+      "space_before": "1.5em",
+      "space_after": "1.5em",
+      "line_spacing": "1.5"
+    },
+    "levels": [
+      {
+        "level": 1,
+        "numbering_style": "chinese_upper",     
+        "numbering_format": "{number}、{title}",
+        "example": "一、引言",
+        "font_size": "18pt",
+        "bold": true
+      },
+      {
+        "level": 2,
+        "numbering_style": "decimal_dot",
+        "numbering_format": "{number}.{title}",
+        "example": "1.1 系统整体功能",
+        "font_size": "16pt",
+        "bold": true
+      },
+      {
+        "level": 3,
+        "numbering_style": "parentheses_decimal",
+        "numbering_format": "({number}) {title}",
+        "example": "(1) 职责描述",
+        "font_size": "14pt",
+        "bold": true
+      },
+      {
+        "level": 4,
+        "numbering_style": "lower_letter",
+        "numbering_format": "{number}. {title}",
+        "example": "a. 详细说明",
+        "font_size": "12pt",
+        "bold": false
+      }
+    ]
+  },
+
+  "body_text": {
+    "alignment": "justified",
+    "first_line_indent": "2字符",      
+    "line_spacing": "1.25",
+    "space_before": "0",
+    "space_after": "0"
+  },
+
+  "figures": {
+    "alignment": "center",
+    "caption_position": "below",
+    "caption_format": "图{number}：{caption}",
+    "numbering_scope": "global",      
+    "font_style": "italic",
+    "font_size": "10pt",
+    "space_before_caption": "0.5em"
+  },
+
+  "tables": {
+    "alignment": "center",
+    "caption_position": "below",
+    "caption_format": "表{number}：{caption}",
+    "numbering_scope": "global",
+    "cell": {
+      "horizontal_alignment": "center",
+      "vertical_alignment": "middle"
+    },
+    "header_font_bold": true,
+    "font_size": "10pt"
+  },
+
+  "lists": {
+    "unordered_bullet": "•",
+    "ordered_style": "decimal",
+    "indent": "1em",
+    "line_spacing": "1.25"
+  }
+}
