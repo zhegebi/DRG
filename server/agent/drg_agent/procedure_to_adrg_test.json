@@ -1,0 +1,176 @@
+{
+  "data": {
+    "47.0100": [
+      {
+        "adrg_code": "GE1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "GE2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "PD1",
+        "mdc_code": "MDCP"
+      },
+      {
+        "adrg_code": "VJ1",
+        "mdc_code": "MDCV"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.2300": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "PD1",
+        "mdc_code": "MDCP"
+      },
+      {
+        "adrg_code": "QJ1",
+        "mdc_code": "MDCQ"
+      },
+      {
+        "adrg_code": "RA1",
+        "mdc_code": "MDCR"
+      },
+      {
+        "adrg_code": "RA3",
+        "mdc_code": "MDCR"
+      },
+      {
+        "adrg_code": "VJ1",
+        "mdc_code": "MDCV"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "74.0x00": [
+      {
+        "adrg_code": "OB1",
+        "mdc_code": "MDCO"
+      }
+    ],
+    "00.6600x004": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FM4",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "VJ1",
+        "mdc_code": "MDCV"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "36.0601": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FM3",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "13.4100x001": [
+      {
+        "adrg_code": "CB5",
+        "mdc_code": "MDCC"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "13.7000": [
+      {
+        "adrg_code": "CB5",
+        "mdc_code": "MDCC"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "81.5100": [
+      {
+        "adrg_code": "IC2",
+        "mdc_code": "MDCI"
+      },
+      {
+        "adrg_code": "VJ1",
+        "mdc_code": "MDCV"
+      },
+      {
+        "adrg_code": "ZC1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "81.5400": [
+      {
+        "adrg_code": "IC2",
+        "mdc_code": "MDCI"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "96.7101": [
+      {
+        "adrg_code": "EK1",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "FP1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "PK1",
+        "mdc_code": "MDCP"
+      }
+    ],
+    "39.9500": [
+      {
+        "adrg_code": "KJ1",
+        "mdc_code": "MDCK"
+      },
+      {
+        "adrg_code": "LL1",
+        "mdc_code": "MDCL"
+      },
+      {
+        "adrg_code": "VJ1",
+        "mdc_code": "MDCV"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "37.8001": [
+      {
+        "adrg_code": "FK4",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "VJ1",
+        "mdc_code": "MDCV"
+      }
+    ]
+  }
+}
