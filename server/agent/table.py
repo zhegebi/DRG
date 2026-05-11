@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional, Dict
 from sqlmodel import Field, SQLModel, JSON, Column
 import uuid
@@ -25,7 +26,9 @@ class DrgTask(SQLModel, table=True):
     """
     task_id: uuid.UUID = Field(primary_key=True)
     name: str
+    user_input: str
     result: Optional[Dict] = Field(default=None, sa_column=Column(JSON)) # the format is DrgResult or DrgTestCase in models.py
     status: TaskStatus = TaskStatus.RUNNING
     should_generate_test: bool = False
     err_msg: Optional[str] = None
+    created_at: datetime

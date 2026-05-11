@@ -124,6 +124,10 @@ class DrgResult(BaseModel):
 class DrgTestCase(BaseModel):
     medical_record_text: str
     expected_result: DrgResult
+
+class DrgResultWithTestCase(BaseModel):
+    medical_record_text: str
+    expected_result: DrgResult
     test_result: DrgResult
 
 
@@ -150,3 +154,15 @@ MCC_AND_CC = MccAndCc.model_validate_json(mcc_and_cc_json)
 
 name_to_code_json = load_data(DRG_RULES_DIR / "name_to_code.json")
 NAME_TO_CODE = NameToCode.model_validate_json(name_to_code_json)
+
+diag_to_mdc_test_json = load_data(DRG_RULES_DIR / "diagnosis_to_mdc_test.json")
+DIAG_TO_MDC_TEST = DiagToMdc.model_validate_json(diag_to_mdc_test_json)
+
+procedure_to_adrg_test_json = load_data(DRG_RULES_DIR / "procedure_to_adrg_test.json")
+PROCEDURE_TO_ADRG_TEST = ProcedureToAdrg.model_validate_json(procedure_to_adrg_test_json)
+
+mcc_and_cc_test_json = load_data(DRG_RULES_DIR / "MCC_and_CC_test.json")
+MCC_AND_CC_TEST = MccAndCc.model_validate_json(mcc_and_cc_test_json)
+
+name_to_code_test_json = load_data(DRG_RULES_DIR / "name_to_code_test.json")
+NAME_TO_CODE_TEST = NameToCode.model_validate_json(name_to_code_test_json)
