@@ -128,7 +128,7 @@ class DrgTestCase(BaseModel):
 class DrgResultWithTestCase(BaseModel):
     medical_record_text: str
     expected_result: DrgResult
-    test_result: DrgResult
+    test_result: DrgResult = None
 
 
 

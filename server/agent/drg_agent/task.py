@@ -1,5 +1,5 @@
 from datetime import datetime
-from openai import OpenAI
+from openai import AsyncOpenAI
 from loguru import logger
 from pydantic import BaseModel, Field
 from typing import Literal, List, Tuple, Union, Optional
@@ -14,7 +14,7 @@ from ...config import API_KEY
 
 # init the constant variables
 try:   
-    client = OpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
+    client = AsyncOpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 except Exception as e:
     logger.error(f"Error initializing DeepSeek API client: {e}")
     raise RuntimeError("Failed to initialize DeepSeek API client")
@@ -132,8 +132,8 @@ ADRG 名称：
 
 {{
   "medical_record_text": "完整的病例描述文本，必须是一段字符串，不是 JSON 对象；内容应包含性别、年龄(0-120)、
-  主要诊断(包含"疾病名称"(必须来自上面的诊断列表),"疾病编码"(必须与名称匹配))、
-  次要诊断列表(列表包含1-4个次要诊断, 可与主诊断不同，也可是其他诊断, 次要诊断包含疾病名称和疾病编码)、
+  主要诊断(包含"疾病名称"(必须来自上面的诊断列表),"疾病编码"(必须与名称匹配，之后的编码也一样))、
+  次要诊断列表(列表包含1-4个次要诊断, 可与主诊断不同，但必须是诊断列表中的疾病, 次要诊断包含疾病名称和疾病编码)、
   主要手术(包含"手术名称"(必须来自上面的手术列表),"手术编码","手术级别"(整数(1-4, 随机)))、
   其他手术列表(列表包含1-3个其他手术, 每个手术包含手术名称、手术编码、手术级别)。",
   "expected_result": {{
@@ -152,6 +152,7 @@ ADRG 名称：
 - 预期结果必须严格按照上述 DRG 分组规则计算得出，不能随意编造。
 - 输出必须是纯 JSON 格式，不要有其他解释文字。
 - "medical_record_text" 字段后面是一个字符串类型，不要写成其他类型了。
+- 如果你被要求输入一个异常情况的测试用例，expected_result中的mdc、adrg、drg填abnormal，complication直接填no，reason填异常情况的描述。
 """
 
 
@@ -176,11 +177,11 @@ class Task(BaseModel):
     workflow of infer DRG result from medical record text
     """
     # step 1: use DeepSeek API to extract medical record information
-    def _extract_medical_record_info(self, medical_record_text: str) -> MedicalRecord:
+    async def _extract_medical_record_info(self, medical_record_text: str) -> MedicalRecord:
         logger.info(f"extracting medical record info from text, task_id: {self.id}")
         # 1. call api
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model = "deepseek-v4-pro",
                 messages = [
                     {"role": "system", "content": EXTRACT_MEDICAL_RECORD_SYSTEM_PROMPT},
@@ -204,7 +205,7 @@ class Task(BaseModel):
             raise RuntimeError(f"Wrong medical record info format: {e}")
 
     # step 2: get MDC code
-    def _get_mdc_code(self, medical_record_text:str, medical_record: MedicalRecord) -> str:
+    async def _get_mdc_code(self, medical_record_text:str, medical_record: MedicalRecord) -> str:
         logger.info(f"getting MDC code from medical record, task_id: {self.id}")
         # 1. get primary diagnosis code
         primary_diagnosis_code = medical_record.primary_diagnosis.code
@@ -234,7 +235,7 @@ class Task(BaseModel):
                 """
                 class MdcResponse(BaseModel):
                     selected_mdc: str
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model = "deepseek-v4-pro",
                     messages = [
                         {"role": "system", "content": GET_MDC_SYSTEM_PROMPT},
@@ -393,13 +394,13 @@ class Task(BaseModel):
     workflow of generating DRG test case
     """
     # step 1: select test case type
-    def _select_test_case_type(self, user_input: str) -> Literal["normal", "boundary", "abnormal"]:
+    async def _select_test_case_type(self, user_input: str) -> Literal["normal", "boundary", "abnormal"]:
         logger.info(f"selecting test case type from user input:\n{user_input} \ntask_id: {self.id}")
         try:
             class TestCaseTypeResponse(BaseModel):
                 type: Literal["normal", "boundary", "abnormal"]
             user_prompt = f"用户需求: {user_input}"
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="deepseek-v4-pro",
                 messages=[
                     {"role": "system", "content": SELECT_TEST_CASE_TYPE_SYSTEM_PROMPT},
@@ -419,7 +420,7 @@ class Task(BaseModel):
             raise RuntimeError(f"cannot select test case type, error: {e}")
 
     # step 2: generate test case
-    def _generate_test_case(
+    async def _generate_test_case(
         self, 
         test_case_type: Literal["normal", "boundary", "abnormal"]
     ) -> DrgTestCase:
@@ -448,7 +449,7 @@ class Task(BaseModel):
                 （指的是常规的、符合典型规则的诊断与手术组合，不刻意制造边缘情况或错误。）
                 """
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="deepseek-v4-pro",
                 messages=[
                     {"role": "system", "content": GENERATE_TEST_CASE_SYSTEM_PROMPT},
@@ -469,14 +470,14 @@ class Task(BaseModel):
         
 
 
-    def run_task_without_test(self, medical_record_text: str):
+    async def run_task_without_test(self, medical_record_text: str):
         """
         run task without generating test case
         """
 
         try:
-            medical_record = self._extract_medical_record_info(medical_record_text)
-            mdc_code = self._get_mdc_code(medical_record_text, medical_record)
+            medical_record = await self._extract_medical_record_info(medical_record_text)
+            mdc_code = await self._get_mdc_code(medical_record_text, medical_record)
             adrg_code = self._get_adrg_code(medical_record, mdc_code)
             mcc_cc_level = self._get_mcc_cc_level(medical_record)
             drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
@@ -493,16 +494,20 @@ class Task(BaseModel):
             self.err_msg = str(e)
             self.status = TaskStatus.FAILED
 
-    def run_task_with_test(self, user_input: str):
+    async def run_task_with_test(self, user_input: str):
         """
         run task with generating test case
         """
 
         try:
-            test_case_type = self._select_test_case_type(user_input)
-            test_case = self._generate_test_case(test_case_type)
-            medical_record = self._extract_medical_record_info(test_case.medical_record_text)
-            mdc_code = self._get_mdc_code(test_case.medical_record_text, medical_record)
+            test_case_type = await self._select_test_case_type(user_input)
+            test_case = await self._generate_test_case(test_case_type)
+            self.result = DrgResultWithTestCase(
+                medical_record_text=test_case.medical_record_text,
+                expected_result=test_case.expected_result
+            )
+            medical_record = await self._extract_medical_record_info(test_case.medical_record_text)
+            mdc_code = await self._get_mdc_code(test_case.medical_record_text, medical_record)
             adrg_code = self._get_adrg_code(medical_record, mdc_code)
             mcc_cc_level = self._get_mcc_cc_level(medical_record)
             drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
@@ -513,11 +518,7 @@ class Task(BaseModel):
                 drg_code, 
                 drg_name
             )
-            self.result = DrgResultWithTestCase(
-                medical_record_text=test_case.medical_record_text,
-                expected_result=test_case.expected_result,
-                test_result=final_result
-            )
+            self.result.test_result = final_result
             self.status = TaskStatus.SUCCESS
         except Exception as e:
             self.err_msg = str(e)
