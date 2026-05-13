@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Literal
 from enum import Enum
 from pathlib import Path
@@ -110,9 +110,9 @@ class GeneralInformation(BaseModel):
 
 class MedicalRecord(BaseModel):
     primary_diagnosis: GeneralInformation
-    secondary_diagnosis_list: List[GeneralInformation] = []
+    secondary_diagnosis_list: List[GeneralInformation] = Field(default_factory=list)
     primary_procedure: GeneralInformation
-    other_procedures: List[GeneralInformation] = []
+    other_procedures: List[GeneralInformation] = Field(default_factory=list)
 
 class DrgResult(BaseModel):
     mdc: str

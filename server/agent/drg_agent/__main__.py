@@ -34,7 +34,8 @@ task_obj1 = Task(
     name = """
         "性别": "女","年龄": 55,
     """,
-    user_input=medical_record_text
+    user_input=medical_record_text,
+    user_id = -1
 )
 asyncio.run(task_obj1.run_task_without_test(medical_record_text))
 task_result1 = task_obj1.result
@@ -51,6 +52,7 @@ task_obj2 = Task(
     name="请给我生成一个正常情况的测试用例",
     user_input=user_input1,
     should_generate_test=True,
+    user_id = -1
 )
 asyncio.run(task_obj2.run_task_with_test(user_input1))
 task_result2 = task_obj2.result
@@ -67,6 +69,7 @@ task_obj3 = Task(
     name="请给我生成一个边界情况的测试用例",
     user_input=user_input2,
     should_generate_test=True,
+    user_id = -1
 )
 asyncio.run(task_obj3.run_task_with_test(user_input2))
 task_result3 = task_obj3.result
@@ -83,6 +86,7 @@ task_obj4 = Task(
     name="请给我生成一个异常情况的测试用例",
     user_input=user_input3,
     should_generate_test=True,
+    user_id = -1
 )
 asyncio.run(task_obj4.run_task_with_test(user_input3))
 task_result4 = task_obj4.result
