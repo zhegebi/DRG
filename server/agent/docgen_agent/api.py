@@ -14,7 +14,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from loguru import logger
 from pydantic import BaseModel
 
-from .docgen_agent.workflow import run_agent
+from .workflow import run_agent
 
 router = APIRouter(prefix="/api/agent")
 

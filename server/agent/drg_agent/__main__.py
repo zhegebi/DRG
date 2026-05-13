@@ -30,7 +30,7 @@ medical_record_text = """
     ]
 """
 task_obj1 = Task(
-    id = uuid.uuid4(),
+    id = uuid.uuid4().hex,
     name = """
         "性别": "女","年龄": 55,
     """,
@@ -48,7 +48,7 @@ if isinstance(task_result1, DrgResult):
 print("********test case 2: test DRG test generating agent(normal case) *********")
 user_input1 = "请给我生成一个正常情况的测试用例"
 task_obj2 = Task(
-    id=uuid.uuid4(),
+    id=uuid.uuid4().hex,
     name="请给我生成一个正常情况的测试用例",
     user_input=user_input1,
     should_generate_test=True,
@@ -65,7 +65,7 @@ if isinstance(task_result2, DrgResultWithTestCase):
 print("********test case 3: test DRG test generating agent(boundary case) *********")
 user_input2 = "请给我生成一个边界情况的测试用例"
 task_obj3 = Task(
-    id=uuid.uuid4(),
+    id=uuid.uuid4().hex,
     name="请给我生成一个边界情况的测试用例",
     user_input=user_input2,
     should_generate_test=True,
@@ -82,7 +82,7 @@ if isinstance(task_result3, DrgResultWithTestCase):
 print("********test case 4: test DRG test generating agent(abnormal case) *********")
 user_input3 = "请给我生成一个异常情况的测试用例"
 task_obj4 = Task(
-    id=uuid.uuid4(),
+    id=uuid.uuid4().hex,
     name="请给我生成一个异常情况的测试用例",
     user_input=user_input3,
     should_generate_test=True,

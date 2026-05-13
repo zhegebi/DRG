@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, Dict
 from sqlmodel import Field, SQLModel, JSON, Column
-import uuid
+
 from .drg_agent.task import TaskStatus
 
 __all__ = ["Agent", "DrgTask"]
@@ -24,7 +24,7 @@ class DrgTask(SQLModel, table=True):
     DrgTask model representing a DRG task in database.
     This is generated when system runs.
     """
-    task_id: uuid.UUID = Field(primary_key=True)
+    task_id: str = Field(primary_key=True)
     name: str
     user_input: str
     user_id: int

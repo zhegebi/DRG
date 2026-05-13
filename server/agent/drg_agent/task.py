@@ -4,7 +4,6 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from typing import Literal, List, Dict, Tuple, Union, Optional, ClassVar
 from enum import Enum
-import uuid
 
 from .models import MedicalRecord, Complication, DrgResult, DrgResultWithTestCase, DrgTestCase, NAME_TO_CODE, DIAG_TO_MDC, MDC_ADRG_DRG, PROCEDURE_TO_ADRG, MCC_AND_CC, DIAG_TO_MDC_TEST, PROCEDURE_TO_ADRG_TEST, MCC_AND_CC_TEST, NAME_TO_CODE_TEST
 from ...config import API_KEY
@@ -182,9 +181,9 @@ class Task(BaseModel):
     TASK_LOG_MAP: task_id -> { step_name: StepLog }
     TASK_LOG_MAP only stores running status task
     """
-    TASK_LOG_MAP: ClassVar[Dict[uuid.UUID, Dict[TaskStep, StepLog]]] = {}
+    TASK_LOG_MAP: ClassVar[Dict[str, Dict[TaskStep, StepLog]]] = {}
 
-    id: uuid.UUID
+    id: str
     name: str
     user_input: str
     user_id: int
@@ -195,15 +194,15 @@ class Task(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
     @classmethod
-    def add_log_line(cls, task_id: uuid.UUID, step: TaskStep, message: str):
+    def add_log_line(cls, task_id: str, step: TaskStep, message: str):
         cls.TASK_LOG_MAP.setdefault(task_id, {}).setdefault(step, StepLog(step_log_lines=[])).step_log_lines.append(message)
 
     @classmethod
-    def mark_step_done(cls, task_id: uuid.UUID, step: TaskStep):
+    def mark_step_done(cls, task_id: str, step: TaskStep):
         cls.TASK_LOG_MAP.setdefault(task_id, {}).setdefault(step, StepLog(step_log_lines=[])).step_is_done = True
 
     @classmethod
-    def delete_task_log(cls, task_id: uuid.UUID):
+    def delete_task_log(cls, task_id: str):
         cls.TASK_LOG_MAP.pop(task_id, None)
 
     """
