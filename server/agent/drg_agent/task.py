@@ -565,13 +565,14 @@ class Task(BaseModel):
         primary_diagnosis = random.choice(list(NAME_TO_CODE_TEST.diagnosis.keys()))
         if test_case_type == "normal":
             secondary_diagnosis_num = random.randint(0, 4)
+            other_procedures_num = random.randint(0, 3)
             logger.info(
-                f"randomly selected primary diagnosis: {primary_diagnosis} and secondary diagnosis num: {secondary_diagnosis_num}"
+                f"randomly selected primary diagnosis: {primary_diagnosis}, secondary diagnosis num: {secondary_diagnosis_num} and other procedures num: {other_procedures_num}"
             )
             Task.add_log_line(
                 self.id,
                 TaskStep.GENERATE_TEST_CASE,
-                f"随机选择主诊断 {primary_diagnosis}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，以增加测试用例的随机性。",
+                f"随机选择主诊断 {primary_diagnosis}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术，以增加测试用例的随机性。",
             )
         elif test_case_type == "boundary":
             all_exclusion_table_list = list(MCC_AND_CC_TEST.exclusion_tables.values())
@@ -579,13 +580,14 @@ class Task(BaseModel):
             random_diag_code = random.choice(combined_diag_codes)
             primary_diagnosis = DIAG_CODE_TO_NAME_TEST.get(random_diag_code, "心力衰竭")
             secondary_diagnosis_num = random.randint(1, 4)
+            other_procedures_num = random.randint(0, 3)
             logger.info(
-                f"randomly selected primary diagnosis: {primary_diagnosis} and secondary diagnosis num: {secondary_diagnosis_num}"
+                f"randomly selected primary diagnosis: {primary_diagnosis}, secondary diagnosis num: {secondary_diagnosis_num} and other procedures num: {other_procedures_num}"
             )
             Task.add_log_line(
                 self.id,
                 TaskStep.GENERATE_TEST_CASE,
-                f"随机选择主诊断 {primary_diagnosis}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，以增加测试用例的随机性。",
+                f"随机选择主诊断 {primary_diagnosis}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术，以增加测试用例的随机性。",
             )
         elif test_case_type == "abnormal":
             logger.info(f"randomly selected primary diagnosis: {primary_diagnosis}")
@@ -601,13 +603,13 @@ class Task(BaseModel):
                 test_case_prompt = f"""
                 请生成一个随机但符合规则的正常场景测试用例
                 （指的是常规的、符合典型规则的诊断与手术组合，不刻意制造边缘情况或错误。）
-                但是主诊断必须是 {primary_diagnosis}，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断。
+                但是主诊断必须是 {primary_diagnosis}，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
                 """
             case "boundary":
                 test_case_prompt = f"""
                 请生成一个随机但符合规则的边界测试用例
                 （重点在于测试 MCC/CC 排除表逻辑、疾病编码正好落在排除表中导致等级变化的场景。）
-                但是主诊断必须是 {primary_diagnosis}，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断。
+                但是主诊断必须是 {primary_diagnosis}，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
                 """
             case "abnormal":
                 test_case_prompt = f"""
