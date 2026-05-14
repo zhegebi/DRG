@@ -10,14 +10,6 @@
         "mdc_code": "MDCG"
       },
       {
-        "adrg_code": "PD1",
-        "mdc_code": "MDCP"
-      },
-      {
-        "adrg_code": "VJ1",
-        "mdc_code": "MDCV"
-      },
-      {
         "adrg_code": "ZJ1",
         "mdc_code": "MDCZ"
       }
@@ -28,24 +20,8 @@
         "mdc_code": "MDCH"
       },
       {
-        "adrg_code": "PD1",
-        "mdc_code": "MDCP"
-      },
-      {
         "adrg_code": "QJ1",
         "mdc_code": "MDCQ"
-      },
-      {
-        "adrg_code": "RA1",
-        "mdc_code": "MDCR"
-      },
-      {
-        "adrg_code": "RA3",
-        "mdc_code": "MDCR"
-      },
-      {
-        "adrg_code": "VJ1",
-        "mdc_code": "MDCV"
       },
       {
         "adrg_code": "ZJ1",
@@ -66,10 +42,6 @@
       {
         "adrg_code": "FM4",
         "mdc_code": "MDCF"
-      },
-      {
-        "adrg_code": "VJ1",
-        "mdc_code": "MDCV"
       },
       {
         "adrg_code": "ZJ1",
@@ -112,10 +84,6 @@
         "mdc_code": "MDCI"
       },
       {
-        "adrg_code": "VJ1",
-        "mdc_code": "MDCV"
-      },
-      {
         "adrg_code": "ZC1",
         "mdc_code": "MDCZ"
       }
@@ -138,10 +106,6 @@
       {
         "adrg_code": "FP1",
         "mdc_code": "MDCF"
-      },
-      {
-        "adrg_code": "PK1",
-        "mdc_code": "MDCP"
       }
     ],
     "39.9500": [
@@ -154,10 +118,6 @@
         "mdc_code": "MDCL"
       },
       {
-        "adrg_code": "VJ1",
-        "mdc_code": "MDCV"
-      },
-      {
         "adrg_code": "ZJ1",
         "mdc_code": "MDCZ"
       }
@@ -166,10 +126,874 @@
       {
         "adrg_code": "FK4",
         "mdc_code": "MDCF"
+      }
+    ],
+    "00.6601": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
       },
       {
-        "adrg_code": "VJ1",
-        "mdc_code": "MDCV"
+        "adrg_code": "FM4",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "36.0301": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FC1",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "36.0303": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FC1",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "36.0602": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FM3",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "36.0400": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FM4",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "36.0700": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FM3",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "36.0302": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FC1",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "36.0701": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FM3",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "36.0901": [
+      {
+        "adrg_code": "FM4",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "37.8901": [
+      {
+        "adrg_code": "FK4",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "37.8902": [
+      {
+        "adrg_code": "FK4",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "37.8903": [
+      {
+        "adrg_code": "FK4",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "37.8101": [
+      {
+        "adrg_code": "FK4",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "37.8301": [
+      {
+        "adrg_code": "FK4",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "39.9501": [
+      {
+        "adrg_code": "FP1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "HJ1",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "LL1",
+        "mdc_code": "MDCL"
+      }
+    ],
+    "39.9500x004": [
+      {
+        "adrg_code": "FP1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "LL1",
+        "mdc_code": "MDCL"
+      }
+    ],
+    "39.9500x005": [
+      {
+        "adrg_code": "FP1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "HJ1",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "LL1",
+        "mdc_code": "MDCL"
+      }
+    ],
+    "39.9500x006": [
+      {
+        "adrg_code": "FP1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "HJ1",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "LL1",
+        "mdc_code": "MDCL"
+      }
+    ],
+    "13.4101": [
+      {
+        "adrg_code": "CB5",
+        "mdc_code": "MDCC"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "13.4300x001": [
+      {
+        "adrg_code": "CB5",
+        "mdc_code": "MDCC"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "13.4200x001": [
+      {
+        "adrg_code": "CB5",
+        "mdc_code": "MDCC"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "13.7200x001": [
+      {
+        "adrg_code": "CB5",
+        "mdc_code": "MDCC"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "13.7100x001": [
+      {
+        "adrg_code": "CB5",
+        "mdc_code": "MDCC"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "21.6101": [
+      {
+        "adrg_code": "DF2",
+        "mdc_code": "MDCD"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "21.6200": [
+      {
+        "adrg_code": "DF2",
+        "mdc_code": "MDCD"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "21.6902": [
+      {
+        "adrg_code": "DF2",
+        "mdc_code": "MDCD"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "28.9201": [
+      {
+        "adrg_code": "DG2",
+        "mdc_code": "MDCD"
+      },
+      {
+        "adrg_code": "QJ1",
+        "mdc_code": "MDCQ"
+      }
+    ],
+    "28.9202": [
+      {
+        "adrg_code": "DG2",
+        "mdc_code": "MDCD"
+      },
+      {
+        "adrg_code": "QJ1",
+        "mdc_code": "MDCQ"
+      }
+    ],
+    "31.6902": [
+      {
+        "adrg_code": "DG1",
+        "mdc_code": "MDCD"
+      },
+      {
+        "adrg_code": "ED1",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "31.9802": [
+      {
+        "adrg_code": "DG1",
+        "mdc_code": "MDCD"
+      },
+      {
+        "adrg_code": "ED1",
+        "mdc_code": "MDCE"
+      }
+    ],
+    "32.4902": [
+      {
+        "adrg_code": "EB1",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "32.2100": [
+      {
+        "adrg_code": "EB2",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "32.2200": [
+      {
+        "adrg_code": "EB2",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "33.4901": [
+      {
+        "adrg_code": "EB2",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "33.9901": [
+      {
+        "adrg_code": "ED1",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "35.9401": [
+      {
+        "adrg_code": "FD1",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "35.3201": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FB2",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "35.3202": [
+      {
+        "adrg_code": "FB1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FB2",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "35.9202": [
+      {
+        "adrg_code": "FD1",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "38.9400": [
+      {
+        "adrg_code": "FF1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FF2",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "38.0000": [
+      {
+        "adrg_code": "FF1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FF2",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "38.0201": [
+      {
+        "adrg_code": "BB2",
+        "mdc_code": "MDCB"
+      },
+      {
+        "adrg_code": "BE1",
+        "mdc_code": "MDCB"
+      },
+      {
+        "adrg_code": "FF1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FF2",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "38.0202": [
+      {
+        "adrg_code": "BB2",
+        "mdc_code": "MDCB"
+      },
+      {
+        "adrg_code": "BE1",
+        "mdc_code": "MDCB"
+      },
+      {
+        "adrg_code": "FF1",
+        "mdc_code": "MDCF"
+      },
+      {
+        "adrg_code": "FF2",
+        "mdc_code": "MDCF"
+      }
+    ],
+    "40.6200": [
+      {
+        "adrg_code": "EC2",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "QJ1",
+        "mdc_code": "MDCQ"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "40.6400": [
+      {
+        "adrg_code": "EC1",
+        "mdc_code": "MDCE"
+      },
+      {
+        "adrg_code": "QJ1",
+        "mdc_code": "MDCQ"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "42.1000": [
+      {
+        "adrg_code": "GC1",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "42.4000": [
+      {
+        "adrg_code": "GB1",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "43.8902": [
+      {
+        "adrg_code": "GB2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "43.4202": [
+      {
+        "adrg_code": "GB2",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "43.8901": [
+      {
+        "adrg_code": "GB2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "43.8903": [
+      {
+        "adrg_code": "GB2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "KE1",
+        "mdc_code": "MDCK"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "44.6400": [
+      {
+        "adrg_code": "GC2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "44.6901": [
+      {
+        "adrg_code": "GC2",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "44.3904": [
+      {
+        "adrg_code": "GB2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "45.9000": [
+      {
+        "adrg_code": "GB3",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "45.5000": [
+      {
+        "adrg_code": "GB3",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "45.6205": [
+      {
+        "adrg_code": "GC3",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "KJ1",
+        "mdc_code": "MDCK"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "45.6207": [
+      {
+        "adrg_code": "GC3",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "KJ1",
+        "mdc_code": "MDCK"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "45.7202": [
+      {
+        "adrg_code": "GB3",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "45.0001": [
+      {
+        "adrg_code": "GB3",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "46.9700": [
+      {
+        "adrg_code": "GB3",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "46.6000": [
+      {
+        "adrg_code": "GB3",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "46.9501": [
+      {
+        "adrg_code": "GK3",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "47.0901": [
+      {
+        "adrg_code": "GE1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "GE2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "47.9100": [
+      {
+        "adrg_code": "GE1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "GE2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "47.0902": [
+      {
+        "adrg_code": "GE1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "GE2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "47.0903": [
+      {
+        "adrg_code": "GE1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "GE2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "47.9200": [
+      {
+        "adrg_code": "GE1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "GE2",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "49.4200": [
+      {
+        "adrg_code": "GG1",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "49.4100": [
+      {
+        "adrg_code": "GG1",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "49.4300": [
+      {
+        "adrg_code": "GG1",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "49.4301": [
+      {
+        "adrg_code": "GG1",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "51.2200": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.2100": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.2101": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      }
+    ],
+    "51.2201": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.2301": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.2400": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.2401": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      }
+    ],
+    "51.2200x004": [
+      {
+        "adrg_code": "HC2",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.8100": [
+      {
+        "adrg_code": "GJ1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "HC3",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.8101": [
+      {
+        "adrg_code": "GJ1",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "HC3",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "51.8402": [
+      {
+        "adrg_code": "HL1",
+        "mdc_code": "MDCH"
+      }
+    ],
+    "52.5101": [
+      {
+        "adrg_code": "HB1",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "KJ1",
+        "mdc_code": "MDCK"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "52.5201": [
+      {
+        "adrg_code": "HB1",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "KJ1",
+        "mdc_code": "MDCK"
+      },
+      {
+        "adrg_code": "ZD1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "52.9502": [
+      {
+        "adrg_code": "HJ1",
+        "mdc_code": "MDCH"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
+      }
+    ],
+    "53.4902": [
+      {
+        "adrg_code": "GF2",
+        "mdc_code": "MDCG"
+      }
+    ],
+    "53.4901": [
+      {
+        "adrg_code": "GF2",
+        "mdc_code": "MDCG"
+      },
+      {
+        "adrg_code": "ZJ1",
+        "mdc_code": "MDCZ"
       }
     ]
   }

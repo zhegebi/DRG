@@ -5,7 +5,6 @@ from .task import Task
 from .models import DrgResult, DrgResultWithTestCase
 
 
-
 ############### test DRG agent ######################
 print("********test case 1: test DRG agent *********")
 medical_record_text = """
@@ -30,18 +29,20 @@ medical_record_text = """
     ]
 """
 task_obj1 = Task(
-    id = uuid.uuid4().hex,
-    name = """
+    id=uuid.uuid4().hex,
+    name="""
         "性别": "女","年龄": 55,
     """,
     user_input=medical_record_text,
-    user_id = -1
+    user_id=-1,
 )
 asyncio.run(task_obj1.run_task_without_test(medical_record_text))
 task_result1 = task_obj1.result
 if isinstance(task_result1, DrgResult):
+    print("medical_record_text:", medical_record_text)
     print(task_result1.reason)
-
+else:
+    print("type error:", task_result1)
 
 
 ################### test DRG test generating agent ######################
@@ -52,7 +53,7 @@ task_obj2 = Task(
     name="请给我生成一个正常情况的测试用例",
     user_input=user_input1,
     should_generate_test=True,
-    user_id = -1
+    user_id=-1,
 )
 asyncio.run(task_obj2.run_task_with_test(user_input1))
 task_result2 = task_obj2.result
@@ -60,6 +61,8 @@ if isinstance(task_result2, DrgResultWithTestCase):
     print("medical_record_text:", task_result2.medical_record_text)
     print("expected_result:", task_result2.expected_result)
     print("test_result:", task_result2.test_result)
+else:
+    print("type error:", task_result2)
 
 
 print("********test case 3: test DRG test generating agent(boundary case) *********")
@@ -69,7 +72,7 @@ task_obj3 = Task(
     name="请给我生成一个边界情况的测试用例",
     user_input=user_input2,
     should_generate_test=True,
-    user_id = -1
+    user_id=-1,
 )
 asyncio.run(task_obj3.run_task_with_test(user_input2))
 task_result3 = task_obj3.result
@@ -77,6 +80,8 @@ if isinstance(task_result3, DrgResultWithTestCase):
     print("medical_record_text:", task_result3.medical_record_text)
     print("expected_result:", task_result3.expected_result)
     print("test_result:", task_result3.test_result)
+else:
+    print("type error:", task_result3)
 
 
 print("********test case 4: test DRG test generating agent(abnormal case) *********")
@@ -86,7 +91,7 @@ task_obj4 = Task(
     name="请给我生成一个异常情况的测试用例",
     user_input=user_input3,
     should_generate_test=True,
-    user_id = -1
+    user_id=-1,
 )
 asyncio.run(task_obj4.run_task_with_test(user_input3))
 task_result4 = task_obj4.result
@@ -95,3 +100,5 @@ if isinstance(task_result4, DrgResultWithTestCase):
     print("expected_result:", task_result4.expected_result)
     print("test_result:", task_result4.test_result)
     print("error message:", task_obj4.err_msg)
+else:
+    print("type error:", task_result4)

@@ -13,14 +13,17 @@ class Complication(str, Enum):
     ANY = "any"
     CC_or_MCC = "cc_or_mcc"
 
+
 class DrgData(BaseModel):
     code: str
     name: str
     type: Complication
 
+
 class ProcedureToAdrgResult(BaseModel):
     adrg_code: str
     mdc_code: str
+
 
 class MccAndCcData(BaseModel):
     code: str
@@ -41,31 +44,37 @@ class MdcAdrgDrg(BaseModel):
         }
     }
     """
+
     mdc: Dict[str, str]
     adrg: Dict[str, str]
     drg: Dict[str, List[DrgData]]
 
+
 class DiagToMdc(BaseModel):
     """
     {
-        data: 
+        data:
         {
             "diag_code": ["mdc_code"]
         }
     }
     """
+
     data: Dict[str, List[str]]
+
 
 class ProcedureToAdrg(BaseModel):
     """
     {
-        data: 
+        data:
         {
             "procedure_code": [procedure_to_adrg_result]
         }
     }
     """
+
     data: Dict[str, List[ProcedureToAdrgResult]]
+
 
 class MccAndCc(BaseModel):
     """
@@ -77,14 +86,16 @@ class MccAndCc(BaseModel):
         }
     }
     """
+
     mcc: List[MccAndCcData]
     cc: List[MccAndCcData]
     exclusion_tables: Dict[str, List[str]]
 
+
 class NameToCode(BaseModel):
     """
     {
-        "diagnosis": 
+        "diagnosis":
         {
             "name": "code"
         },
@@ -94,6 +105,7 @@ class NameToCode(BaseModel):
         }
     }
     """
+
     diagnosis: Dict[str, str]
     procedure: Dict[str, str]
 
@@ -104,6 +116,7 @@ class GeneralInformation(BaseModel):
     """
     diagnosis and procedure data structure
     """
+
     code: Optional[str] = None
     name: str
 
@@ -114,6 +127,7 @@ class MedicalRecord(BaseModel):
     primary_procedure: GeneralInformation
     other_procedures: List[GeneralInformation] = Field(default_factory=list)
 
+
 class DrgResult(BaseModel):
     mdc: str
     adrg: str
@@ -121,9 +135,11 @@ class DrgResult(BaseModel):
     complication: Literal[Complication.CC, Complication.MCC, Complication.NO]
     reason: str
 
+
 class DrgTestCase(BaseModel):
     medical_record_text: str
     expected_result: DrgResult
+
 
 class DrgResultWithTestCase(BaseModel):
     medical_record_text: str
@@ -131,12 +147,12 @@ class DrgResultWithTestCase(BaseModel):
     test_result: DrgResult | None = None
 
 
-
 # load drg rule data from json file
 def load_data(path: Path):
     with open(path, "r", encoding="utf-8") as f:
         data_json = f.read()
     return data_json
+
 
 DRG_RULES_DIR = Path(__file__).parent / "drg_rules"
 
@@ -155,6 +171,9 @@ MCC_AND_CC = MccAndCc.model_validate_json(mcc_and_cc_json)
 name_to_code_json = load_data(DRG_RULES_DIR / "name_to_code.json")
 NAME_TO_CODE = NameToCode.model_validate_json(name_to_code_json)
 
+mdc_adrg_drg_test_json = load_data(DRG_RULES_DIR / "mdc_adrg_drg_test.json")
+MDC_ADRG_DRG_TEST = MdcAdrgDrg.model_validate_json(mdc_adrg_drg_test_json)
+
 diag_to_mdc_test_json = load_data(DRG_RULES_DIR / "diagnosis_to_mdc_test.json")
 DIAG_TO_MDC_TEST = DiagToMdc.model_validate_json(diag_to_mdc_test_json)
 
@@ -166,3 +185,5 @@ MCC_AND_CC_TEST = MccAndCc.model_validate_json(mcc_and_cc_test_json)
 
 name_to_code_test_json = load_data(DRG_RULES_DIR / "name_to_code_test.json")
 NAME_TO_CODE_TEST = NameToCode.model_validate_json(name_to_code_test_json)
+
+DIAG_CODE_TO_NAME_TEST = {code: name for name, code in NAME_TO_CODE_TEST.diagnosis.items()}
