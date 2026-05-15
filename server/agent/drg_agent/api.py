@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from pydantic import BaseModel
-from typing import List, Union
+from typing import List
 from loguru import logger
 from datetime import datetime
 import uuid
@@ -144,14 +144,13 @@ async def get_task_status(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/task/result/{task_id}")
-async def get_task_result(
+@router.get("/task/result/{task_id}/stream")
+async def get_task_result_stream(
     task_id: str,
-    stream: bool = False,
     db_client: AsyncSession = Depends(get_async_session),
-) -> Union[str, StreamingResponse]:
+) -> StreamingResponse:
     """
-    get the result of the task
+    get the result of the task in streaming format
     """
     try:
         query_result = await db_client.exec(
@@ -160,7 +159,6 @@ async def get_task_result(
             )
         )
         result, err_msg, status, should_generate_test = query_result.first()  # type: ignore
-        response = ""
         if should_generate_test:
             result = DrgResultWithTestCase.model_validate_json(result)
             if status == TaskStatus.SUCCESS.value and result.test_result is not None:
@@ -257,28 +255,146 @@ async def get_task_result(
                 """
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid task status '{status}' to get the result")
-        if stream:
 
-            async def event_generator():
-                # split response into chunks of size chunk_size
-                chunk_size = 10
-                for i in range(0, len(response), chunk_size):
-                    chunk = response[i : i + chunk_size]
-                    # yield chunk as SSE data
-                    yield f"data: {chunk}\n\n"
-                # yield end marker
-                yield "data: [END]\n\n"
+        async def event_generator():
+            # split response into chunks of size chunk_size
+            chunk_size = 10
+            for i in range(0, len(response), chunk_size):
+                chunk = response[i : i + chunk_size]
+                # yield chunk as SSE data
+                yield f"data: {chunk}\n\n"
+            # yield end marker
+            yield "data: [END]\n\n"
 
-            return StreamingResponse(
-                event_generator(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",  # disable nginx buffering
-                },
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # disable nginx buffering
+            },
+        )
+    except HTTPException:
+        await db_client.rollback()
+        raise
+    except Exception as e:
+        await db_client.rollback()
+        logger.exception(f"Error getting task result in streaming format: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/task/result/{task_id}")
+async def get_task_result(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> str:
+    """
+    get the result of the task
+    """
+    try:
+        query_result = await db_client.exec(
+            select(DrgTask.result, DrgTask.err_msg, DrgTask.status, DrgTask.should_generate_test).where(
+                DrgTask.task_id == task_id
             )
+        )
+        result, err_msg, status, should_generate_test = query_result.first()  # type: ignore
+        if should_generate_test:
+            result = DrgResultWithTestCase.model_validate_json(result)
+            if status == TaskStatus.SUCCESS.value and result.test_result is not None:
+                response = f"""
+                # DRG 测试用例生成及其验证
+
+                ### 测试病历
+
+                {result.medical_record_text}
+
+                ### 预期结果
+
+                **MDC 分组**: {result.expected_result.mdc}
+
+                **ADRG 分组**: {result.expected_result.adrg}
+
+                **最终 DRG 组**: {result.expected_result.drg}
+
+                **并发症/合并症等级**: {result.expected_result.complication.value}
+
+                **入组理由**: 
+                
+                {result.expected_result.reason}
+
+                ### 测试结果
+
+                **MDC 分组**: {result.test_result.mdc}
+
+                **ADRG 分组**: {result.test_result.adrg}
+
+                **最终 DRG 组**: {result.test_result.drg}
+
+                **并发/合并症等级**: {result.test_result.complication.value}
+
+                **入组理由**: 
+                
+                {result.test_result.reason}
+                """
+            elif status == TaskStatus.FAILED.value:
+                response = f"""
+                # DRG 测试用例生成及其验证
+
+                ### 测试病历
+
+                {result.medical_record_text}
+
+                ### 预期结果
+
+                **MDC 分组**: {result.expected_result.mdc}
+
+                **ADRG 分组**: {result.expected_result.adrg}
+
+                **最终 DRG 组**: {result.expected_result.drg}
+
+                **并发症/合并症等级**: {result.expected_result.complication.value}
+
+                **入组理由**: 
+                
+                {result.expected_result.reason}
+
+                ### 测试结果
+
+                **错误信息**: 
+                
+                {err_msg}
+                """
+            else:
+                raise HTTPException(status_code=400, detail=f"Invalid task status '{status}' to get the result")
         else:
-            return response
+            result = DrgResult.model_validate_json(result)
+            if status == TaskStatus.SUCCESS.value:
+                response = f"""
+                # DRG 入组结果报告
+
+                **MDC 分组**：{result.mdc}
+
+                **ADRG 分组**：{result.adrg}
+
+                **最终 DRG 组**：{result.drg}
+
+                **并发症/合并症等级**：{result.complication.value}
+
+                **入组理由**：
+
+                {result.reason}
+                """
+            elif status == TaskStatus.FAILED.value:
+                response = f"""
+                # DRG 入组结果报告
+
+                **错误信息**:
+                
+                {err_msg}
+                """
+            else:
+                raise HTTPException(status_code=400, detail=f"Invalid task status '{status}' to get the result")
+        return response
     except HTTPException:
         await db_client.rollback()
         raise
