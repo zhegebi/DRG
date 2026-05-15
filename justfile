@@ -66,3 +66,7 @@ gen:
     cd "{{client_dir}}" {{and}} npx openapi-ts -i ../server/openapi.json -o src/api -c @hey-api/client-axios
     npx shx rm -f "{{openapi_file}}"
 alias g := gen
+
+# run drg_agent tests
+test_drg_agent:
+    uv run -m server.agent.drg_agent

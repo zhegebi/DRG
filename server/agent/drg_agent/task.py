@@ -31,8 +31,8 @@ from ...config import API_KEY
 try:
     client = AsyncOpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 except Exception as e:
-    logger.error(f"Error initializing DeepSeek API client: {e}")
-    raise RuntimeError("Failed to initialize DeepSeek API client")
+    logger.exception(f"Error initializing DeepSeek API client: {e}")
+    raise Exception("Failed to initialize DeepSeek API client")
 
 EXTRACT_MEDICAL_RECORD_SYSTEM_PROMPT = """
 你是一个专业的病历信息提取助手。你的任务是从用户提供的病历文本中，提取出结构化信息，并严格按照以下JSON格式输出：
@@ -264,22 +264,22 @@ class Task(BaseModel):
             )
             Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "DeepSeek API成功返回响应")
         except Exception as e:
-            logger.error(f"Error calling DeepSeek API on extract medical record info: {e}")
-            raise RuntimeError(f"调用DeepSeek API提取病历信息失败: {e}")
+            logger.exception(f"Error calling DeepSeek API on extract medical record info: {e}")
+            raise Exception(f"调用DeepSeek API提取病历信息失败: {e}")
         # 2. parse response
         Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "解析DeepSeek API返回的病历信息")
         content = response.choices[0].message.content
         if content is None:
-            logger.error("Empty response from DeepSeek API on extract medical record info")
-            raise ValueError("DeepSeek API返回空响应")
+            logger.exception("Empty response from DeepSeek API on extract medical record info")
+            raise Exception("DeepSeek API返回空响应")
         try:
             medical_record = MedicalRecord.model_validate_json(content)
             Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "成功解析病历信息")
             Task.mark_step_done(self.id, TaskStep.EXTRACT_MEDICAL_RECORD)
             return medical_record
         except Exception as e:
-            logger.error(f"Wrong medical record info format: {e}")
-            raise RuntimeError(f"病历信息格式错误: {e}")
+            logger.exception(f"Wrong medical record info format: {e}")
+            raise ValueError(f"病历信息格式错误: {e}")
 
     # step 2: get MDC code
     async def _get_mdc_code(self, medical_record_text: str, medical_record: MedicalRecord) -> str:
@@ -291,15 +291,15 @@ class Task(BaseModel):
         if primary_diagnosis_code is None:
             primary_diagnosis_code = NAME_TO_CODE.diagnosis.get(medical_record.primary_diagnosis.name, None)
         if primary_diagnosis_code is None:
-            logger.error(f"unknown diagnosis {medical_record.primary_diagnosis.name}")
+            logger.exception(f"unknown diagnosis {medical_record.primary_diagnosis.name}")
             raise ValueError(f"无法识别诊断 {medical_record.primary_diagnosis.name}")
         Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, f"主要诊断代码: {primary_diagnosis_code}")
         # 2. get MDC code
         Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, "提取MDC代码")
         mdc_code_list = DIAG_TO_MDC.data.get(primary_diagnosis_code, None)
         if mdc_code_list is None or len(mdc_code_list) == 0:
-            logger.error(f"cannot find MDC code for diagnosis {medical_record.primary_diagnosis.name}")
-            raise RuntimeError(f"无法找到MDC代码: 诊断 {medical_record.primary_diagnosis.name}")
+            logger.exception(f"cannot find MDC code for diagnosis {medical_record.primary_diagnosis.name}")
+            raise ValueError(f"无法找到MDC代码: 诊断 {medical_record.primary_diagnosis.name}")
         if len(mdc_code_list) == 1:
             Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, f"成功提取MDC代码: {mdc_code_list[0]}")
             Task.mark_step_done(self.id, TaskStep.GET_MDC_CODE)
@@ -349,8 +349,8 @@ class Task(BaseModel):
                     Task.mark_step_done(self.id, TaskStep.GET_MDC_CODE)
                     return mdc_code_list[0]
             except Exception as e:
-                logger.error(f"Error getting MDC code: {e}")
-                raise RuntimeError(f"无法选择MDC代码: {e}")
+                logger.exception(f"Error getting MDC code: {e}")
+                raise Exception(f"无法选择MDC代码: {e}")
 
     # step 3: get ADRG code
     def _get_adrg_code(self, medical_record: MedicalRecord, mdc_code: str) -> str:
@@ -362,22 +362,22 @@ class Task(BaseModel):
         if primary_procedure_code is None:
             primary_procedure_code = NAME_TO_CODE.procedure.get(medical_record.primary_procedure.name, None)
         if primary_procedure_code is None:
-            logger.error(f"unknown procedure {medical_record.primary_procedure.name}")
+            logger.exception(f"unknown procedure {medical_record.primary_procedure.name}")
             raise ValueError(f"无法识别主要手术 {medical_record.primary_procedure.name}")
         Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, f"主要手术代码: {primary_procedure_code}")
         # 2. get ADRG code
         Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, "提取ADRG代码")
         adrg_code_list = PROCEDURE_TO_ADRG.data.get(primary_procedure_code, None)
         if adrg_code_list is None or len(adrg_code_list) == 0:
-            logger.error(f"cannot find ADRG code for procedure {primary_procedure_code}")
-            raise RuntimeError(f"无法找到主要手术 {primary_procedure_code} 的ADRG代码")
+            logger.exception(f"cannot find ADRG code for procedure {primary_procedure_code}")
+            raise ValueError(f"无法找到主要手术 {primary_procedure_code} 的ADRG代码")
         for result in adrg_code_list:
             if result.mdc_code == mdc_code:
                 Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, f"成功提取ADRG代码: {result.adrg_code}")
                 Task.mark_step_done(self.id, TaskStep.GET_ADRG_CODE)
                 return result.adrg_code
-        logger.error(f"cannot find ADRG code for MDC {mdc_code} and procedure {primary_procedure_code}")
-        raise RuntimeError(f"无法找到 MDC {mdc_code} 和主要手术 {primary_procedure_code} 的ADRG代码")
+        logger.exception(f"cannot find ADRG code for MDC {mdc_code} and procedure {primary_procedure_code}")
+        raise ValueError(f"无法找到 MDC {mdc_code} 和主要手术 {primary_procedure_code} 的ADRG代码")
 
     # step 4: get MCC and CC level
     def _get_mcc_cc_level(
@@ -391,7 +391,7 @@ class Task(BaseModel):
         if primary_diagnosis_code is None:
             primary_diagnosis_code = NAME_TO_CODE.diagnosis.get(medical_record.primary_diagnosis.name, None)
         if primary_diagnosis_code is None:
-            logger.error(f"unknown diagnosis {medical_record.primary_diagnosis.name}")
+            logger.exception(f"unknown diagnosis {medical_record.primary_diagnosis.name}")
             raise ValueError(f"无法识别主要诊断 {medical_record.primary_diagnosis.name}")
         Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, f"主要诊断代码: {primary_diagnosis_code}")
         # 2. get secondary diagnosis code list
@@ -454,8 +454,8 @@ class Task(BaseModel):
         Task.add_log_line(self.id, TaskStep.GET_DRG, "获取DRG代码列表")
         drg_list = MDC_ADRG_DRG.drg.get(adrg_code, None)
         if drg_list is None:
-            logger.error(f"cannot find DRG code list for ADRG {adrg_code}")
-            raise RuntimeError(f"无法获取DRG代码列表, ADRG代码为 {adrg_code}")
+            logger.exception(f"cannot find DRG code list for ADRG {adrg_code}")
+            raise ValueError(f"无法获取DRG代码列表, ADRG代码为 {adrg_code}")
         Task.add_log_line(self.id, TaskStep.GET_DRG, "成功获取到DRG代码列表")
         # 2. select DRG code
         Task.add_log_line(self.id, TaskStep.GET_DRG, "选择DRG代码")
@@ -472,8 +472,8 @@ class Task(BaseModel):
                 Task.add_log_line(self.id, TaskStep.GET_DRG, f"成功选择到DRG代码: {drg.code}")
                 Task.mark_step_done(self.id, TaskStep.GET_DRG)
                 return (drg.code, drg.name)
-        logger.error(f"cannot find DRG code for ADRG {adrg_code} and MCC and CC level {mcc_cc_level}")
-        raise RuntimeError(f"无法获取DRG代码, ADRG代码为 {adrg_code} , MCC/CC等级为 {mcc_cc_level}")
+        logger.exception(f"cannot find DRG code for ADRG {adrg_code} and MCC and CC level {mcc_cc_level}")
+        raise ValueError(f"无法获取DRG代码, ADRG代码为 {adrg_code} , MCC/CC等级为 {mcc_cc_level}")
 
     # step 6: final result
     def _get_final_result(
@@ -491,14 +491,14 @@ class Task(BaseModel):
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, "获取MDC名称")
         mdc_name = MDC_ADRG_DRG.mdc.get(mdc_code, None)
         if mdc_name is None:
-            logger.error(f"unknown MDC {mdc_code}")
+            logger.exception(f"unknown MDC {mdc_code}")
             raise ValueError(f"无法获取MDC名称, MDC代码为 {mdc_code}")
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, f"成功获取到MDC名称: {mdc_name}")
         # 2. get ADRG name
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, "获取ADRG名称")
         adrg_name = MDC_ADRG_DRG.adrg.get(adrg_code, None)
         if adrg_name is None:
-            logger.error(f"unknown ADRG {adrg_code}")
+            logger.exception(f"unknown ADRG {adrg_code}")
             raise ValueError(f"无法获取ADRG名称, ADRG代码为 {adrg_code}")
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, f"成功获取到ADRG名称: {adrg_name}")
         # 3. get reason for the result
@@ -555,8 +555,8 @@ class Task(BaseModel):
             Task.mark_step_done(self.id, TaskStep.SELECT_TEST_CASE_TYPE)
             return test_case_type
         except Exception as e:
-            logger.error(f"cannot select test case type, error: {e}")
-            raise RuntimeError(f"选择测试用例类型失败, {e}")
+            logger.exception(f"cannot select test case type, error: {e}")
+            raise Exception(f"选择测试用例类型失败, {e}")
 
     # step 2: generate test case
     async def _generate_test_case(self, test_case_type: Literal["normal", "boundary", "abnormal"]) -> DrgTestCase:
@@ -647,15 +647,15 @@ class Task(BaseModel):
                 else:
                     content += chunk.choices[0].delta.content or ""
             if not content.strip():
-                logger.error("cannot generate test case from deepseek")
-                raise RuntimeError("生成测试用例失败, deepseek api响应为空")
+                logger.exception("cannot generate test case from deepseek")
+                raise Exception("生成测试用例失败, deepseek api响应为空")
             test_case = DrgTestCase.model_validate_json(content)
             Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, "成功生成测试用例")
             Task.mark_step_done(self.id, TaskStep.GENERATE_TEST_CASE)
             return test_case
         except Exception as e:
-            logger.error(f"cannot generate test case, error: {e}")
-            raise RuntimeError(f"生成测试用例失败, {e}")
+            logger.exception(f"cannot generate test case, error: {e}")
+            raise Exception(f"生成测试用例失败, {e}")
 
     async def run_task_without_test(self, medical_record_text: str):
         """
