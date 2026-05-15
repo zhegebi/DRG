@@ -1,31 +1,31 @@
-from datetime import datetime
 import random
-from openai import AsyncOpenAI
-from loguru import logger
-from pydantic import BaseModel, Field
-from typing import Literal, List, Dict, Tuple, Union, Optional, ClassVar
+from datetime import datetime
 from enum import Enum
+from typing import ClassVar, Literal, Optional, Union
 
+from loguru import logger
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
+
+from ...config import API_KEY
 from .models import (
-    MedicalRecord,
+    DIAG_CODE_TO_NAME_TEST,
+    DIAG_TO_MDC,
+    DIAG_TO_MDC_TEST,
+    MCC_AND_CC,
+    MCC_AND_CC_TEST,
+    MDC_ADRG_DRG,
+    MDC_ADRG_DRG_TEST,
+    NAME_TO_CODE,
+    NAME_TO_CODE_TEST,
+    PROCEDURE_TO_ADRG,
+    PROCEDURE_TO_ADRG_TEST,
     Complication,
     DrgResult,
     DrgResultWithTestCase,
     DrgTestCase,
-    NAME_TO_CODE,
-    DIAG_TO_MDC,
-    MDC_ADRG_DRG,
-    PROCEDURE_TO_ADRG,
-    MCC_AND_CC,
-    MDC_ADRG_DRG_TEST,
-    DIAG_TO_MDC_TEST,
-    PROCEDURE_TO_ADRG_TEST,
-    MCC_AND_CC_TEST,
-    NAME_TO_CODE_TEST,
-    DIAG_CODE_TO_NAME_TEST,
+    MedicalRecord,
 )
-from ...config import API_KEY
-
 
 # init the constant variables
 try:
@@ -204,7 +204,7 @@ class TaskStep(str, Enum):
 
 
 class StepLog(BaseModel):
-    step_log_lines: List[str]
+    step_log_lines: list[str]
     step_is_done: bool = False
 
 
@@ -214,7 +214,7 @@ class Task(BaseModel):
     TASK_LOG_MAP only stores running status task
     """
 
-    TASK_LOG_MAP: ClassVar[Dict[str, Dict[TaskStep, StepLog]]] = {}
+    TASK_LOG_MAP: ClassVar[dict[str, dict[TaskStep, StepLog]]] = {}
 
     id: str
     name: str
@@ -397,7 +397,7 @@ class Task(BaseModel):
         # 2. get secondary diagnosis code list
         Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "提取次要诊断代码列表")
         secondary_diagnosis_list = medical_record.secondary_diagnosis_list
-        secondary_diagnosis_code_list: List[str] = []
+        secondary_diagnosis_code_list: list[str] = []
         for diagnosis in secondary_diagnosis_list:
             diagnosis_code = diagnosis.code
             if diagnosis_code is None:
@@ -444,7 +444,7 @@ class Task(BaseModel):
     # step 5: get DRG code and name
     def _get_drg_code_and_name(
         self, adrg_code: str, mcc_cc_level: Literal[Complication.CC, Complication.MCC, Complication.NO]
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """
         return (drg_code, drg_name)
         """

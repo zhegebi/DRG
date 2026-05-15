@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Literal
 from enum import Enum
 from pathlib import Path
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 ################ drg rule models ################
@@ -45,9 +46,9 @@ class MdcAdrgDrg(BaseModel):
     }
     """
 
-    mdc: Dict[str, str]
-    adrg: Dict[str, str]
-    drg: Dict[str, List[DrgData]]
+    mdc: dict[str, str]
+    adrg: dict[str, str]
+    drg: dict[str, list[DrgData]]
 
 
 class DiagToMdc(BaseModel):
@@ -60,7 +61,7 @@ class DiagToMdc(BaseModel):
     }
     """
 
-    data: Dict[str, List[str]]
+    data: dict[str, list[str]]
 
 
 class ProcedureToAdrg(BaseModel):
@@ -73,7 +74,7 @@ class ProcedureToAdrg(BaseModel):
     }
     """
 
-    data: Dict[str, List[ProcedureToAdrgResult]]
+    data: dict[str, list[ProcedureToAdrgResult]]
 
 
 class MccAndCc(BaseModel):
@@ -87,9 +88,9 @@ class MccAndCc(BaseModel):
     }
     """
 
-    mcc: List[MccAndCcData]
-    cc: List[MccAndCcData]
-    exclusion_tables: Dict[str, List[str]]
+    mcc: list[MccAndCcData]
+    cc: list[MccAndCcData]
+    exclusion_tables: dict[str, list[str]]
 
 
 class NameToCode(BaseModel):
@@ -106,8 +107,8 @@ class NameToCode(BaseModel):
     }
     """
 
-    diagnosis: Dict[str, str]
-    procedure: Dict[str, str]
+    diagnosis: dict[str, str]
+    procedure: dict[str, str]
 
 
 ################ medical record models ################
@@ -123,9 +124,9 @@ class GeneralInformation(BaseModel):
 
 class MedicalRecord(BaseModel):
     primary_diagnosis: GeneralInformation
-    secondary_diagnosis_list: List[GeneralInformation] = Field(default_factory=list)
+    secondary_diagnosis_list: list[GeneralInformation] = Field(default_factory=list)
     primary_procedure: GeneralInformation
-    other_procedures: List[GeneralInformation] = Field(default_factory=list)
+    other_procedures: list[GeneralInformation] = Field(default_factory=list)
 
 
 class DrgResult(BaseModel):

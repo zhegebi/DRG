@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import Optional, Dict
-from sqlmodel import Field, SQLModel, JSON, Column
+from typing import Optional
+
+from sqlmodel import JSON, Column, Field, SQLModel
 
 from .drg_agent.task import TaskStatus
 
@@ -28,7 +29,7 @@ class DrgTask(SQLModel, table=True):
     name: str
     user_input: str
     user_id: int
-    result: Optional[Dict] = Field(
+    result: Optional[dict] = Field(
         default=None, sa_column=Column(JSON)
     )  # the format is DrgResult or DrgTestCase in models.py
     status: str = TaskStatus.PENDING.value

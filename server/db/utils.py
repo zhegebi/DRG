@@ -20,7 +20,7 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     if async_engine is None:
         raise RuntimeError("Database not initialized. Call init_db() on application startup.")
 
-    async_session_maker = sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)
+    async_session_maker = sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore
 
-    async with async_session_maker() as session:
+    async with async_session_maker() as session:  # type: ignore
         yield session

@@ -1,20 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+import asyncio
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from loguru import logger
+from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from pydantic import BaseModel
-from typing import List
-from loguru import logger
-from datetime import datetime
-import uuid
-import asyncio
 
-from ..table import DrgTask
-from .task import Task, TaskStatus, TaskStep, StepLog, DrgResultWithTestCase, DrgResult
 from server.db.utils import get_async_session
 from server.user.auth import get_current_user
 from server.user.table import User
 
+from ..table import DrgTask
+from .task import DrgResult, DrgResultWithTestCase, StepLog, Task, TaskStatus, TaskStep
 
 router = APIRouter(prefix="/api/drg")
 
@@ -92,7 +92,7 @@ async def create_task(
 async def get_task_list(
     current_user: User = Depends(get_current_user),
     db_client: AsyncSession = Depends(get_async_session),
-) -> List[TaskListResponse]:
+) -> list[TaskListResponse]:
     """
     get the task list of the current user
     """
@@ -103,7 +103,7 @@ async def get_task_list(
             )
         )
         results = query_result.all()
-        task_list: List[TaskListResponse] = []
+        task_list: list[TaskListResponse] = []
         for row in results:
             task_list.append(
                 TaskListResponse(task_id=row[0], task_name=row[1], task_status=TaskStatus(row[2]), created_at=row[3])
@@ -120,9 +120,9 @@ async def get_task_list(
 
 @router.get("/task/status")
 async def get_task_status(
-    task_ids: List[str] = Query(..., description="The task ids to get status"),
+    task_ids: list[str] = Query(..., description="The task ids to get status"),
     db_client: AsyncSession = Depends(get_async_session),
-) -> List[TaskStatusResponse]:
+) -> list[TaskStatusResponse]:
     """
     get the status of the tasks
     """
@@ -131,7 +131,7 @@ async def get_task_status(
             select(DrgTask.task_id, DrgTask.status).where(DrgTask.task_id.in_(task_ids))  # type: ignore
         )
         results = query_result.all()
-        task_status_list: List[TaskStatusResponse] = []
+        task_status_list: list[TaskStatusResponse] = []
         for row in results:
             task_status_list.append(TaskStatusResponse(task_id=row[0], task_status=TaskStatus(row[1])))
         return task_status_list
