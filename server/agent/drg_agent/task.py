@@ -227,10 +227,12 @@ class Task(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
     @classmethod
-    def add_log_line(cls, task_id: str, step: TaskStep, message: str):
-        cls.TASK_LOG_MAP.setdefault(task_id, {}).setdefault(step, StepLog(step_log_lines=[])).step_log_lines.append(
-            message
-        )
+    def add_log_line(cls, task_id: str, step: TaskStep, message: str, append_to_last: bool = False):
+        lines = cls.TASK_LOG_MAP.setdefault(task_id, {}).setdefault(step, StepLog(step_log_lines=[])).step_log_lines
+        if append_to_last and len(lines) > 0:
+            lines[-1] += message
+        else:
+            lines.append(message)
 
     @classmethod
     def mark_step_done(cls, task_id: str, step: TaskStep):
@@ -249,7 +251,7 @@ class Task(BaseModel):
         logger.info(f"extracting medical record info from text, task_id: {self.id}")
         Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "开始从病历文本中提取病历信息")
         # 1. call api
-        Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "开始调用DeepSeek API提取病历信息")
+        Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "调用DeepSeek API提取病历信息")
         try:
             response = await client.chat.completions.create(
                 model="deepseek-v4-pro",
@@ -265,7 +267,7 @@ class Task(BaseModel):
             logger.error(f"Error calling DeepSeek API on extract medical record info: {e}")
             raise RuntimeError(f"调用DeepSeek API提取病历信息失败: {e}")
         # 2. parse response
-        Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "开始解析DeepSeek API返回的病历信息")
+        Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "解析DeepSeek API返回的病历信息")
         content = response.choices[0].message.content
         if content is None:
             logger.error("Empty response from DeepSeek API on extract medical record info")
@@ -293,7 +295,7 @@ class Task(BaseModel):
             raise ValueError(f"无法识别诊断 {medical_record.primary_diagnosis.name}")
         Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, f"主要诊断代码: {primary_diagnosis_code}")
         # 2. get MDC code
-        Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, "开始提取MDC代码")
+        Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, "提取MDC代码")
         mdc_code_list = DIAG_TO_MDC.data.get(primary_diagnosis_code, None)
         if mdc_code_list is None or len(mdc_code_list) == 0:
             logger.error(f"cannot find MDC code for diagnosis {medical_record.primary_diagnosis.name}")
@@ -364,7 +366,7 @@ class Task(BaseModel):
             raise ValueError(f"无法识别主要手术 {medical_record.primary_procedure.name}")
         Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, f"主要手术代码: {primary_procedure_code}")
         # 2. get ADRG code
-        Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, "开始提取ADRG代码")
+        Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, "提取ADRG代码")
         adrg_code_list = PROCEDURE_TO_ADRG.data.get(primary_procedure_code, None)
         if adrg_code_list is None or len(adrg_code_list) == 0:
             logger.error(f"cannot find ADRG code for procedure {primary_procedure_code}")
@@ -412,7 +414,7 @@ class Task(BaseModel):
             Task.mark_step_done(self.id, TaskStep.GET_MCC_CC_LEVEL)
             return Complication.NO
         # 3. judge MCC and CC
-        Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "开始判断MCC和CC等级")
+        Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "判断MCC和CC等级")
         exclusion_tables = MCC_AND_CC.exclusion_tables
         mcc_list = MCC_AND_CC.mcc
         cc_list = MCC_AND_CC.cc
@@ -456,7 +458,7 @@ class Task(BaseModel):
             raise RuntimeError(f"无法获取DRG代码列表, ADRG代码为 {adrg_code}")
         Task.add_log_line(self.id, TaskStep.GET_DRG, "成功获取到DRG代码列表")
         # 2. select DRG code
-        Task.add_log_line(self.id, TaskStep.GET_DRG, "开始选择DRG代码")
+        Task.add_log_line(self.id, TaskStep.GET_DRG, "选择DRG代码")
         for drg in drg_list:
             if drg.type == Complication.ANY:
                 Task.add_log_line(self.id, TaskStep.GET_DRG, f"成功选择到DRG代码: {drg.code}")
@@ -500,7 +502,7 @@ class Task(BaseModel):
             raise ValueError(f"无法获取ADRG名称, ADRG代码为 {adrg_code}")
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, f"成功获取到ADRG名称: {adrg_name}")
         # 3. get reason for the result
-        Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, "开始生成最终结果的解释")
+        Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, "生成最终结果的解释")
         lines = [
             f"主诊断 {medical_record.primary_diagnosis.name} 匹配到的MDC为 {mdc_code}（{mdc_name}）",
             f"手术 {medical_record.primary_procedure.name} 匹配到的ADRG为 {adrg_code}（{adrg_name}）",
@@ -561,7 +563,7 @@ class Task(BaseModel):
         logger.info(f"generating test case, task_id: {self.id}")
         Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, "开始根据测试用例类型生成测试用例")
         # 1. add random factors to the test case
-        Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, "生成测试用例的随机因素")
+        Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, f"为{test_case_type}测试用例类型生成测试用例的随机因素")
         primary_diagnosis = random.choice(list(NAME_TO_CODE_TEST.diagnosis.keys()))
         if test_case_type == "normal":
             secondary_diagnosis_num = random.randint(0, 4)
@@ -590,11 +592,11 @@ class Task(BaseModel):
                 f"随机选择主诊断 {primary_diagnosis}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术，以增加测试用例的随机性。",
             )
         elif test_case_type == "abnormal":
-            logger.info(f"randomly selected primary diagnosis: {primary_diagnosis}")
+            logger.info(f"randomly selected keyword: {primary_diagnosis}")
             Task.add_log_line(
                 self.id,
                 TaskStep.GENERATE_TEST_CASE,
-                f"随机选择主诊断 {primary_diagnosis}，以增加测试用例的随机性。",
+                f"随机选择关键字 {primary_diagnosis}，以增加测试用例的随机性。",
             )
         # 2. write test case prompt
         Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, "编写测试用例提示词")
@@ -626,11 +628,25 @@ class Task(BaseModel):
                     {"role": "system", "content": GENERATE_TEST_CASE_SYSTEM_PROMPT},
                     {"role": "user", "content": test_case_prompt},
                 ],
+                stream=True,
+                extra_body={"thinking": {"type": "enabled"}},
                 temperature=1.0,
                 response_format={"type": "json_object"},
             )
-            content = response.choices[0].message.content
-            if content is None:
+            content = ""
+            is_first_chunk = True  # first chunk append_to_last should be False, others should be True
+            async for chunk in response:
+                if chunk.choices[0].delta.reasoning_content:  # type: ignore
+                    Task.add_log_line(
+                        self.id,
+                        TaskStep.GENERATE_TEST_CASE,
+                        chunk.choices[0].delta.reasoning_content,  # type: ignore
+                        append_to_last=not is_first_chunk,
+                    )
+                    is_first_chunk = False
+                else:
+                    content += chunk.choices[0].delta.content or ""
+            if not content.strip():
                 logger.error("cannot generate test case from deepseek")
                 raise RuntimeError("生成测试用例失败, deepseek api响应为空")
             test_case = DrgTestCase.model_validate_json(content)
