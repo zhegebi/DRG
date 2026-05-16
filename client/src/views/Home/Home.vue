@@ -94,12 +94,12 @@ onUnmounted(() => {
 <style scoped>
 .home {
   width: 100%;
-  min-height: 100vh;
+  min-height: calc(100vh - 64px);
   background: #f8fafc;
 }
 
 .sections-container {
-  height: 100vh;
+  height: calc(100vh - 64px);
   overflow-y: scroll;
   overflow-x: hidden;
   scroll-behavior: smooth;

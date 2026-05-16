@@ -10,7 +10,17 @@
       <span class="trigger-copy">
         <span class="trigger-title">{{ title }}</span>
       </span>
-      <span class="trigger-arrow" aria-hidden="true"></span>
+      <span class="trigger-actions">
+        <SvgIcon
+          v-if="statusIcon"
+          type="mdi"
+          :path="statusIcon"
+          class="trigger-status-icon"
+          :class="statusClass"
+          :title="statusTitle"
+        />
+        <span class="trigger-arrow" aria-hidden="true"></span>
+      </span>
     </button>
 
     <div
@@ -28,13 +38,23 @@
 </template>
 
 <script lang="ts" setup>
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import SvgIcon from '@jamescoyle/vue-icon'
+import {
+  mdiAlertCircleOutline,
+  mdiCheckCircleOutline,
+  mdiClockOutline,
+  mdiProgressClock,
+} from '@mdi/js'
+
+type DropDownStatus = 'pending' | 'running' | 'success' | 'failed'
 
 interface Props {
   title?: string
   content?: string
   defaultOpen?: boolean
   panelType?: 'text' | 'menu'
+  status?: DropDownStatus
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -48,6 +68,32 @@ const isOpen = ref(props.defaultOpen)
 const contentRef = ref<HTMLElement | null>(null)
 const panelId = `dropdown-panel-${Math.random().toString(36).slice(2, 10)}`
 const bottomStickThreshold = 15
+
+const statusIconMap: Record<DropDownStatus, string> = {
+  pending: mdiClockOutline,
+  running: mdiProgressClock,
+  success: mdiCheckCircleOutline,
+  failed: mdiAlertCircleOutline,
+}
+
+const statusTitleMap: Record<DropDownStatus, string> = {
+  pending: 'pending',
+  running: 'running',
+  success: 'success',
+  failed: 'failed',
+}
+
+const statusIcon = computed(() => {
+  return props.status ? statusIconMap[props.status] : ''
+})
+
+const statusTitle = computed(() => {
+  return props.status ? statusTitleMap[props.status] : ''
+})
+
+const statusClass = computed(() => {
+  return props.status ? `trigger-status-icon--${props.status}` : ''
+})
 
 const scrollToBottom = () => {
   const content = contentRef.value
@@ -136,6 +182,36 @@ watch(
   font-weight: 700;
   line-height: 1.35;
   color: #0f172a;
+}
+
+.trigger-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.trigger-status-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
+.trigger-status-icon--pending {
+  color: #64748b;
+}
+
+.trigger-status-icon--running {
+  color: #007fd4;
+}
+
+.trigger-status-icon--success {
+  color: #16a34a;
+}
+
+.trigger-status-icon--failed {
+  color: #dc2626;
 }
 
 .trigger-arrow {

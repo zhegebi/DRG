@@ -113,10 +113,8 @@ const isActive = (item: typeof navItems[0]) => {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   
   /* 固定定位，贴合顶部和左右 */
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
+  position: relative;
   margin: 0;
 }
 

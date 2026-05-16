@@ -13,7 +13,7 @@
 
 <style scoped>
 .full-section {
-  min-height: 100vh;
+  min-height: calc(100vh - 64px);
   width: 100%;
   scroll-snap-align: start;
   display: flex;

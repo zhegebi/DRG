@@ -10,9 +10,16 @@ import ControlBar from './ControlBar.vue';
 </template>
 
 <style scoped>
+:global(html),
+:global(body),
+:global(#app) {
+    margin: 0;
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+}
+
 .app-container {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 100vh;
 }
 </style>

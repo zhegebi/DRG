@@ -67,6 +67,6 @@ gen:
     npx shx rm -f "{{openapi_file}}"
 alias g := gen
 
-# run drg_agent tests
-test_drg_agent:
+# run drg_agent for tests
+run_drg_agent:
     uv run -m server.agent.drg_agent
