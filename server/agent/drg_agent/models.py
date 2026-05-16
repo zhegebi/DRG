@@ -133,7 +133,7 @@ class DrgResult(BaseModel):
     mdc: str
     adrg: str
     drg: str
-    complication: Literal[Complication.CC, Complication.MCC, Complication.NO]
+    complication: Literal["cc", "mcc", "no"]
     reason: str
 
 

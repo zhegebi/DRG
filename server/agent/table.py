@@ -1,11 +1,17 @@
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
 from sqlmodel import JSON, Column, Field, SQLModel
 
-from .drg_agent.task import TaskStatus
-
 __all__ = ["Agent", "DrgTask"]
+
+
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
 
 
 class Agent(SQLModel, table=True):
@@ -31,8 +37,8 @@ class DrgTask(SQLModel, table=True):
     user_id: int
     result: Optional[dict] = Field(
         default=None, sa_column=Column(JSON)
-    )  # the format is DrgResult or DrgTestCase in models.py
-    status: str = TaskStatus.PENDING.value
-    should_generate_test: bool = False
+    )  # the format is DrgResult or DrgResultWithTestCase in models.py
+    status: str
+    should_generate_test: bool
     err_msg: Optional[str] = None
     created_at: datetime

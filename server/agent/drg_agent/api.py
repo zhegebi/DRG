@@ -13,8 +13,8 @@ from server.db.utils import get_async_session
 from server.user.auth import get_current_user
 from server.user.table import User
 
-from ..table import DrgTask
-from .task import DrgResult, DrgResultWithTestCase, StepLog, Task, TaskStatus, TaskStep
+from ..table import DrgTask, TaskStatus
+from .task import DrgResult, DrgResultWithTestCase, StepLog, Task, TaskStep
 
 router = APIRouter(prefix="/api/drg")
 
@@ -69,6 +69,7 @@ async def create_task(
             name=task_obj.name,
             user_input=task_obj.user_input,
             user_id=task_obj.user_id,
+            status=task_obj.status.value,
             should_generate_test=task_obj.should_generate_test,
             created_at=task_obj.created_at,
         )
@@ -177,7 +178,7 @@ async def get_task_result_stream(
 
                 **最终 DRG 组**: {result.expected_result.drg}
 
-                **并发症/合并症等级**: {result.expected_result.complication.value}
+                **并发症/合并症等级**: {result.expected_result.complication}
 
                 **入组理由**: 
                 
@@ -191,7 +192,7 @@ async def get_task_result_stream(
 
                 **最终 DRG 组**: {result.test_result.drg}
 
-                **并发/合并症等级**: {result.test_result.complication.value}
+                **并发/合并症等级**: {result.test_result.complication}
 
                 **入组理由**: 
                 
@@ -213,7 +214,7 @@ async def get_task_result_stream(
 
                 **最终 DRG 组**: {result.expected_result.drg}
 
-                **并发症/合并症等级**: {result.expected_result.complication.value}
+                **并发症/合并症等级**: {result.expected_result.complication}
 
                 **入组理由**: 
                 
@@ -239,7 +240,7 @@ async def get_task_result_stream(
 
                 **最终 DRG 组**：{result.drg}
 
-                **并发症/合并症等级**：{result.complication.value}
+                **并发症/合并症等级**：{result.complication}
 
                 **入组理由**：
 
@@ -316,7 +317,7 @@ async def get_task_result(
 
                 **最终 DRG 组**: {result.expected_result.drg}
 
-                **并发症/合并症等级**: {result.expected_result.complication.value}
+                **并发症/合并症等级**: {result.expected_result.complication}
 
                 **入组理由**: 
                 
@@ -330,7 +331,7 @@ async def get_task_result(
 
                 **最终 DRG 组**: {result.test_result.drg}
 
-                **并发/合并症等级**: {result.test_result.complication.value}
+                **并发/合并症等级**: {result.test_result.complication}
 
                 **入组理由**: 
                 
@@ -352,7 +353,7 @@ async def get_task_result(
 
                 **最终 DRG 组**: {result.expected_result.drg}
 
-                **并发症/合并症等级**: {result.expected_result.complication.value}
+                **并发症/合并症等级**: {result.expected_result.complication}
 
                 **入组理由**: 
                 
@@ -378,7 +379,7 @@ async def get_task_result(
 
                 **最终 DRG 组**：{result.drg}
 
-                **并发症/合并症等级**：{result.complication.value}
+                **并发症/合并症等级**：{result.complication}
 
                 **入组理由**：
 

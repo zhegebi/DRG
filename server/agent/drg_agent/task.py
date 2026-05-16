@@ -6,8 +6,12 @@ from typing import ClassVar, Literal, Optional, Union
 from loguru import logger
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
+from sqlmodel import update
+
+from server.db.utils import get_async_session
 
 from ...config import API_KEY
+from ..table import DrgTask, TaskStatus
 from .models import (
     DIAG_CODE_TO_NAME_TEST,
     DIAG_TO_MDC,
@@ -183,13 +187,6 @@ ADRG 名称：
   }}
 }}
 """
-
-
-class TaskStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILED = "failed"
 
 
 class TaskStep(str, Enum):
@@ -380,9 +377,7 @@ class Task(BaseModel):
         raise ValueError(f"无法找到 MDC {mdc_code} 和主要手术 {primary_procedure_code} 的ADRG代码")
 
     # step 4: get MCC and CC level
-    def _get_mcc_cc_level(
-        self, medical_record: MedicalRecord
-    ) -> Literal[Complication.CC, Complication.MCC, Complication.NO]:
+    def _get_mcc_cc_level(self, medical_record: MedicalRecord) -> Literal["cc", "mcc", "no"]:
         logger.info(f"getting MCC and CC level from medical record, task_id: {self.id}")
         Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "开始从病历信息中判断MCC和CC等级")
         # 1. get primary diagnosis code
@@ -412,7 +407,7 @@ class Task(BaseModel):
         if len(secondary_diagnosis_code_list) == 0:
             Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "没有提取到次要诊断代码, 判断为无MCC和CC等级")
             Task.mark_step_done(self.id, TaskStep.GET_MCC_CC_LEVEL)
-            return Complication.NO
+            return Complication.NO.value
         # 3. judge MCC and CC
         Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "判断MCC和CC等级")
         exclusion_tables = MCC_AND_CC.exclusion_tables
@@ -426,7 +421,7 @@ class Task(BaseModel):
                     if exclusion_table is None or primary_diagnosis_code not in exclusion_table:
                         Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "判断结束, 为MCC")
                         Task.mark_step_done(self.id, TaskStep.GET_MCC_CC_LEVEL)
-                        return Complication.MCC
+                        return Complication.MCC.value
                     break
             for cc_diag in cc_list:
                 if cc_diag.code == code:
@@ -435,16 +430,14 @@ class Task(BaseModel):
                     if exclusion_table is None or primary_diagnosis_code not in exclusion_table:
                         Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "判断结束, 为CC")
                         Task.mark_step_done(self.id, TaskStep.GET_MCC_CC_LEVEL)
-                        return Complication.CC
+                        return Complication.CC.value
                     break
         Task.add_log_line(self.id, TaskStep.GET_MCC_CC_LEVEL, "判断结束, 无MCC和CC等级")
         Task.mark_step_done(self.id, TaskStep.GET_MCC_CC_LEVEL)
-        return Complication.NO
+        return Complication.NO.value
 
     # step 5: get DRG code and name
-    def _get_drg_code_and_name(
-        self, adrg_code: str, mcc_cc_level: Literal[Complication.CC, Complication.MCC, Complication.NO]
-    ) -> tuple[str, str]:
+    def _get_drg_code_and_name(self, adrg_code: str, mcc_cc_level: Literal["cc", "mcc", "no"]) -> tuple[str, str]:
         """
         return (drg_code, drg_name)
         """
@@ -481,7 +474,7 @@ class Task(BaseModel):
         medical_record: MedicalRecord,
         mdc_code: str,
         adrg_code: str,
-        mcc_cc_level: Literal[Complication.CC, Complication.MCC, Complication.NO],
+        mcc_cc_level: Literal["cc", "mcc", "no"],
         drg_code: str,
         drg_name: str,
     ) -> DrgResult:
@@ -506,8 +499,8 @@ class Task(BaseModel):
         lines = [
             f"主诊断 {medical_record.primary_diagnosis.name} 匹配到的MDC为 {mdc_code}（{mdc_name}）",
             f"手术 {medical_record.primary_procedure.name} 匹配到的ADRG为 {adrg_code}（{adrg_name}）",
-            f"次诊断 {','.join([d.name for d in medical_record.secondary_diagnosis_list]) if len(medical_record.secondary_diagnosis_list) > 0 else '为空'} 由此判定并发症等级为 {mcc_cc_level.value}",
-            f"根据并发症等级 {mcc_cc_level.value} 选择DRG为 {drg_code}（{drg_name}）",
+            f"次诊断 {','.join([d.name for d in medical_record.secondary_diagnosis_list]) if len(medical_record.secondary_diagnosis_list) > 0 else '为空'} 由此判定并发症等级为 {mcc_cc_level}",
+            f"根据并发症等级 {mcc_cc_level} 选择DRG为 {drg_code}（{drg_name}）",
         ]
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, "成功生成最终结果的解释")
         Task.mark_step_done(self.id, TaskStep.GET_FINAL_RESULT)
@@ -657,49 +650,170 @@ class Task(BaseModel):
             logger.exception(f"cannot generate test case, error: {e}")
             raise Exception(f"生成测试用例失败, {e}")
 
-    async def run_task_without_test(self, medical_record_text: str):
+    async def run_task_without_test(self, medical_record_text: str, uv_test: bool = False):
         """
         run task without generating test case
         """
+        if uv_test:
+            try:
+                self.status = TaskStatus.RUNNING
+                medical_record = await self._extract_medical_record_info(medical_record_text)
+                mdc_code = await self._get_mdc_code(medical_record_text, medical_record)
+                adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                mcc_cc_level = self._get_mcc_cc_level(medical_record)
+                drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
+                final_result = self._get_final_result(
+                    medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name
+                )
+                self.result = final_result
+                self.status = TaskStatus.SUCCESS
+            except Exception as e:
+                self.err_msg = str(e)
+                self.status = TaskStatus.FAILED
+            finally:
+                Task.delete_task_log(self.id)
+        else:
+            async for db_client in get_async_session():
+                try:
+                    self.status = TaskStatus.RUNNING
+                    try:
+                        await db_client.exec(
+                            update(DrgTask).where(DrgTask.task_id == self.id).values(status=self.status.value)  # type: ignore
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot update task status, error: {e}")
+                        raise e
+                    medical_record = await self._extract_medical_record_info(medical_record_text)
+                    mdc_code = await self._get_mdc_code(medical_record_text, medical_record)
+                    adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                    mcc_cc_level = self._get_mcc_cc_level(medical_record)
+                    drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
+                    final_result = self._get_final_result(
+                        medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name
+                    )
+                    self.result = final_result
+                    self.status = TaskStatus.SUCCESS
+                    try:
+                        result_dict = self.result.model_dump()
+                        await db_client.exec(
+                            update(DrgTask)
+                            .where(DrgTask.task_id == self.id)  # type: ignore
+                            .values(status=self.status.value, result=result_dict)
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot update task status and result, error: {e}")
+                        raise e
+                except Exception as e:
+                    self.err_msg = str(e)
+                    self.status = TaskStatus.FAILED
+                    try:
+                        await db_client.exec(
+                            update(DrgTask)
+                            .where(DrgTask.task_id == self.id)  # type: ignore
+                            .values(status=self.status.value, err_msg=self.err_msg)
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot update task status and err_msg, error: {e}")
+                        raise e
+                finally:
+                    Task.delete_task_log(self.id)
 
-        try:
-            self.status = TaskStatus.RUNNING
-            medical_record = await self._extract_medical_record_info(medical_record_text)
-            mdc_code = await self._get_mdc_code(medical_record_text, medical_record)
-            adrg_code = self._get_adrg_code(medical_record, mdc_code)
-            mcc_cc_level = self._get_mcc_cc_level(medical_record)
-            drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
-            final_result = self._get_final_result(medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name)
-            self.result = final_result
-            self.status = TaskStatus.SUCCESS
-        except Exception as e:
-            self.err_msg = str(e)
-            self.status = TaskStatus.FAILED
-        finally:
-            Task.delete_task_log(self.id)
-
-    async def run_task_with_test(self, user_input: str):
+    async def run_task_with_test(self, user_input: str, uv_test: bool = False):
         """
         run task with generating test case
         """
-
-        try:
-            self.status = TaskStatus.RUNNING
-            test_case_type = await self._select_test_case_type(user_input)
-            test_case = await self._generate_test_case(test_case_type)
-            self.result = DrgResultWithTestCase(
-                medical_record_text=test_case.medical_record_text, expected_result=test_case.expected_result
-            )
-            medical_record = await self._extract_medical_record_info(test_case.medical_record_text)
-            mdc_code = await self._get_mdc_code(test_case.medical_record_text, medical_record)
-            adrg_code = self._get_adrg_code(medical_record, mdc_code)
-            mcc_cc_level = self._get_mcc_cc_level(medical_record)
-            drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
-            final_result = self._get_final_result(medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name)
-            self.result.test_result = final_result
-            self.status = TaskStatus.SUCCESS
-        except Exception as e:
-            self.err_msg = str(e)
-            self.status = TaskStatus.FAILED
-        finally:
-            Task.delete_task_log(self.id)
+        if uv_test:
+            try:
+                self.status = TaskStatus.RUNNING
+                test_case_type = await self._select_test_case_type(user_input)
+                test_case = await self._generate_test_case(test_case_type)
+                self.result = DrgResultWithTestCase(
+                    medical_record_text=test_case.medical_record_text, expected_result=test_case.expected_result
+                )
+                medical_record = await self._extract_medical_record_info(test_case.medical_record_text)
+                mdc_code = await self._get_mdc_code(test_case.medical_record_text, medical_record)
+                adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                mcc_cc_level = self._get_mcc_cc_level(medical_record)
+                drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
+                final_result = self._get_final_result(
+                    medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name
+                )
+                self.result.test_result = final_result
+                self.status = TaskStatus.SUCCESS
+            except Exception as e:
+                self.err_msg = str(e)
+                self.status = TaskStatus.FAILED
+            finally:
+                Task.delete_task_log(self.id)
+        else:
+            async for db_client in get_async_session():
+                try:
+                    self.status = TaskStatus.RUNNING
+                    try:
+                        await db_client.exec(
+                            update(DrgTask).where(DrgTask.task_id == self.id).values(status=self.status.value)  # type: ignore
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot update task status, error: {e}")
+                        raise e
+                    test_case_type = await self._select_test_case_type(user_input)
+                    test_case = await self._generate_test_case(test_case_type)
+                    self.result = DrgResultWithTestCase(
+                        medical_record_text=test_case.medical_record_text, expected_result=test_case.expected_result
+                    )
+                    try:
+                        result_dict = self.result.model_dump()
+                        await db_client.exec(
+                            update(DrgTask).where(DrgTask.task_id == self.id).values(result=result_dict)  # type: ignore
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot update task result, error: {e}")
+                        raise e
+                    medical_record = await self._extract_medical_record_info(test_case.medical_record_text)
+                    mdc_code = await self._get_mdc_code(test_case.medical_record_text, medical_record)
+                    adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                    mcc_cc_level = self._get_mcc_cc_level(medical_record)
+                    drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
+                    final_result = self._get_final_result(
+                        medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name
+                    )
+                    self.result.test_result = final_result
+                    self.status = TaskStatus.SUCCESS
+                    try:
+                        result_dict = self.result.model_dump()
+                        await db_client.exec(
+                            update(DrgTask)
+                            .where(DrgTask.task_id == self.id)  # type: ignore
+                            .values(status=self.status.value, result=result_dict)
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot update task result, error: {e}")
+                        raise e
+                except Exception as e:
+                    self.err_msg = str(e)
+                    self.status = TaskStatus.FAILED
+                    try:
+                        await db_client.exec(
+                            update(DrgTask)
+                            .where(DrgTask.task_id == self.id)  # type: ignore
+                            .values(status=self.status.value, err_msg=self.err_msg)
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot update task status and err_msg, error: {e}")
+                        raise e
+                finally:
+                    Task.delete_task_log(self.id)

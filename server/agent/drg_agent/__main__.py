@@ -1,9 +1,8 @@
-import uuid
 import asyncio
+import uuid
 
-from .task import Task
 from .models import DrgResult, DrgResultWithTestCase
-
+from .task import Task
 
 ############### test DRG agent ######################
 print("********test case 1: test DRG agent *********")
@@ -36,7 +35,7 @@ task_obj1 = Task(
     user_input=medical_record_text,
     user_id=-1,
 )
-asyncio.run(task_obj1.run_task_without_test(medical_record_text))
+asyncio.run(task_obj1.run_task_without_test(medical_record_text, uv_test=True))
 task_result1 = task_obj1.result
 if isinstance(task_result1, DrgResult):
     print("medical_record_text:", medical_record_text)
@@ -55,12 +54,12 @@ task_obj2 = Task(
     should_generate_test=True,
     user_id=-1,
 )
-asyncio.run(task_obj2.run_task_with_test(user_input1))
+asyncio.run(task_obj2.run_task_with_test(user_input1, uv_test=True))
 task_result2 = task_obj2.result
 if isinstance(task_result2, DrgResultWithTestCase):
     print("medical_record_text:", task_result2.medical_record_text)
-    print("expected_result:", task_result2.expected_result)
-    print("test_result:", task_result2.test_result)
+    print("expected_result:", task_result2.expected_result.model_dump())
+    print("test_result:", task_result2.test_result.model_dump() if task_result2.test_result is not None else None)
 else:
     print("type error:", task_result2)
 
@@ -74,12 +73,12 @@ task_obj3 = Task(
     should_generate_test=True,
     user_id=-1,
 )
-asyncio.run(task_obj3.run_task_with_test(user_input2))
+asyncio.run(task_obj3.run_task_with_test(user_input2, uv_test=True))
 task_result3 = task_obj3.result
 if isinstance(task_result3, DrgResultWithTestCase):
     print("medical_record_text:", task_result3.medical_record_text)
-    print("expected_result:", task_result3.expected_result)
-    print("test_result:", task_result3.test_result)
+    print("expected_result:", task_result3.expected_result.model_dump())
+    print("test_result:", task_result3.test_result.model_dump() if task_result3.test_result is not None else None)
 else:
     print("type error:", task_result3)
 
@@ -93,12 +92,12 @@ task_obj4 = Task(
     should_generate_test=True,
     user_id=-1,
 )
-asyncio.run(task_obj4.run_task_with_test(user_input3))
+asyncio.run(task_obj4.run_task_with_test(user_input3, uv_test=True))
 task_result4 = task_obj4.result
 if isinstance(task_result4, DrgResultWithTestCase):
     print("medical_record_text:", task_result4.medical_record_text)
-    print("expected_result:", task_result4.expected_result)
-    print("test_result:", task_result4.test_result)
+    print("expected_result:", task_result4.expected_result.model_dump())
+    print("test_result:", task_result4.test_result.model_dump() if task_result4.test_result is not None else None)
     print("error message:", task_obj4.err_msg)
 else:
     print("type error:", task_result4)
