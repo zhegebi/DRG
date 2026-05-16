@@ -5,6 +5,52 @@ export type ClientOptions = {
 };
 
 /**
+ * Body_generate_doc_api_agent_generate_doc_post
+ */
+export type BodyGenerateDocApiAgentGenerateDocPost = {
+    /**
+     * Prompt
+     *
+     * 前端用户的提示词
+     */
+    prompt?: string;
+    /**
+     * Doc Type
+     *
+     * 目标文档类型
+     */
+    doc_type?: '需求规格说明书' | '架构设计文档' | '测试文档';
+    /**
+     * Source File
+     *
+     * 需求文件（txt/md）
+     */
+    source_file?: Blob | File | null;
+};
+
+/**
+ * GenerateDocResponse
+ */
+export type GenerateDocResponse = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * File Name
+     */
+    file_name: string;
+    /**
+     * File Path
+     */
+    file_path: string;
+    /**
+     * Doc Type
+     */
+    doc_type: string;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -51,6 +97,85 @@ export type SignupRequest = {
 };
 
 /**
+ * StepLog
+ */
+export type StepLog = {
+    /**
+     * Step Log Lines
+     */
+    step_log_lines: Array<string>;
+    /**
+     * Step Is Done
+     */
+    step_is_done?: boolean;
+};
+
+/**
+ * TaskListResponse
+ */
+export type TaskListResponse = {
+    /**
+     * Task Id
+     */
+    task_id: string;
+    /**
+     * Task Name
+     */
+    task_name: string;
+    task_status: TaskStatus;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * TaskProgressResponse
+ */
+export type TaskProgressResponse = {
+    task_progress: StepLog;
+    /**
+     * Is Completed
+     */
+    is_completed?: boolean;
+};
+
+/**
+ * TaskRequest
+ */
+export type TaskRequest = {
+    /**
+     * User Input
+     */
+    user_input: string;
+    /**
+     * Should Generate Test
+     */
+    should_generate_test?: boolean;
+};
+
+/**
+ * TaskStatus
+ */
+export type TaskStatus = 'pending' | 'running' | 'success' | 'failed';
+
+/**
+ * TaskStatusResponse
+ */
+export type TaskStatusResponse = {
+    /**
+     * Task Id
+     */
+    task_id: string;
+    task_status: TaskStatus;
+};
+
+/**
+ * TaskStep
+ */
+export type TaskStep = 'extract_medical_record' | 'get_mdc_code' | 'get_adrg_code' | 'get_mcc_cc_level' | 'get_drg' | 'get_final_result' | 'select_test_case_type' | 'generate_test_case';
+
+/**
  * TokenResponse
  */
 export type TokenResponse = {
@@ -92,28 +217,14 @@ export type ValidationError = {
     };
 };
 
-export type RootAssetsGetData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/assets/';
-};
-
-export type RootAssetsGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type SignupAuthSignupPostData = {
+export type SignupApiAuthSignupPostData = {
     body: SignupRequest;
     path?: never;
     query?: never;
-    url: '/auth/signup';
+    url: '/api/auth/signup';
 };
 
-export type SignupAuthSignupPostErrors = {
+export type SignupApiAuthSignupPostErrors = {
     /**
      * Username or email already registered
      */
@@ -128,7 +239,7 @@ export type SignupAuthSignupPostErrors = {
     500: unknown;
 };
 
-export type SignupAuthSignupPostResponses = {
+export type SignupApiAuthSignupPostResponses = {
     /**
      * Successful Response
      */
@@ -139,16 +250,16 @@ export type SignupAuthSignupPostResponses = {
     201: unknown;
 };
 
-export type SignupAuthSignupPostResponse = SignupAuthSignupPostResponses[keyof SignupAuthSignupPostResponses];
+export type SignupApiAuthSignupPostResponse = SignupApiAuthSignupPostResponses[keyof SignupApiAuthSignupPostResponses];
 
-export type LoginAuthLoginPostData = {
+export type LoginApiAuthLoginPostData = {
     body: LoginRequest;
     path?: never;
     query?: never;
-    url: '/auth/login';
+    url: '/api/auth/login';
 };
 
-export type LoginAuthLoginPostErrors = {
+export type LoginApiAuthLoginPostErrors = {
     /**
      * Invalid username or password
      */
@@ -163,25 +274,25 @@ export type LoginAuthLoginPostErrors = {
     500: unknown;
 };
 
-export type LoginAuthLoginPostError = LoginAuthLoginPostErrors[keyof LoginAuthLoginPostErrors];
+export type LoginApiAuthLoginPostError = LoginApiAuthLoginPostErrors[keyof LoginApiAuthLoginPostErrors];
 
-export type LoginAuthLoginPostResponses = {
+export type LoginApiAuthLoginPostResponses = {
     /**
      * Login successful
      */
     200: TokenResponse;
 };
 
-export type LoginAuthLoginPostResponse = LoginAuthLoginPostResponses[keyof LoginAuthLoginPostResponses];
+export type LoginApiAuthLoginPostResponse = LoginApiAuthLoginPostResponses[keyof LoginApiAuthLoginPostResponses];
 
-export type RefreshAccessTokenAuthRefreshPostData = {
+export type RefreshAccessTokenApiAuthRefreshPostData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/auth/refresh';
+    url: '/api/auth/refresh';
 };
 
-export type RefreshAccessTokenAuthRefreshPostErrors = {
+export type RefreshAccessTokenApiAuthRefreshPostErrors = {
     /**
      * Invalid refresh token
      */
@@ -192,29 +303,292 @@ export type RefreshAccessTokenAuthRefreshPostErrors = {
     500: unknown;
 };
 
-export type RefreshAccessTokenAuthRefreshPostResponses = {
+export type RefreshAccessTokenApiAuthRefreshPostResponses = {
     /**
      * Access token refreshed successfully
      */
     200: TokenResponse;
 };
 
-export type RefreshAccessTokenAuthRefreshPostResponse = RefreshAccessTokenAuthRefreshPostResponses[keyof RefreshAccessTokenAuthRefreshPostResponses];
+export type RefreshAccessTokenApiAuthRefreshPostResponse = RefreshAccessTokenApiAuthRefreshPostResponses[keyof RefreshAccessTokenApiAuthRefreshPostResponses];
 
-export type LogoutAuthLogoutPostData = {
+export type LogoutApiAuthLogoutPostData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/auth/logout';
+    url: '/api/auth/logout';
 };
 
-export type LogoutAuthLogoutPostResponses = {
+export type LogoutApiAuthLogoutPostResponses = {
     /**
-     * Response Logout Auth Logout Post
+     * Response Logout Api Auth Logout Post
      *
      * Logged out successfully
      */
     200: 'Logged out successfully';
 };
 
-export type LogoutAuthLogoutPostResponse = LogoutAuthLogoutPostResponses[keyof LogoutAuthLogoutPostResponses];
+export type LogoutApiAuthLogoutPostResponse = LogoutApiAuthLogoutPostResponses[keyof LogoutApiAuthLogoutPostResponses];
+
+export type GenerateDocApiAgentGenerateDocPostData = {
+    body?: BodyGenerateDocApiAgentGenerateDocPost;
+    path?: never;
+    query?: never;
+    url: '/api/agent/generate-doc';
+};
+
+export type GenerateDocApiAgentGenerateDocPostErrors = {
+    /**
+     * 参数错误
+     */
+    400: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * LLM 调用失败
+     */
+    500: unknown;
+};
+
+export type GenerateDocApiAgentGenerateDocPostError = GenerateDocApiAgentGenerateDocPostErrors[keyof GenerateDocApiAgentGenerateDocPostErrors];
+
+export type GenerateDocApiAgentGenerateDocPostResponses = {
+    /**
+     * 文档生成成功
+     */
+    200: GenerateDocResponse;
+};
+
+export type GenerateDocApiAgentGenerateDocPostResponse = GenerateDocApiAgentGenerateDocPostResponses[keyof GenerateDocApiAgentGenerateDocPostResponses];
+
+export type ListDocTypesApiAgentDocTypesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/doc-types';
+};
+
+export type ListDocTypesApiAgentDocTypesGetResponses = {
+    /**
+     * Response List Doc Types Api Agent Doc Types Get
+     *
+     * Successful Response
+     */
+    200: Array<string>;
+};
+
+export type ListDocTypesApiAgentDocTypesGetResponse = ListDocTypesApiAgentDocTypesGetResponses[keyof ListDocTypesApiAgentDocTypesGetResponses];
+
+export type CreateTaskApiDrgTaskCreatePostData = {
+    body: TaskRequest;
+    path?: never;
+    query?: never;
+    url: '/api/drg/task/create';
+};
+
+export type CreateTaskApiDrgTaskCreatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateTaskApiDrgTaskCreatePostError = CreateTaskApiDrgTaskCreatePostErrors[keyof CreateTaskApiDrgTaskCreatePostErrors];
+
+export type CreateTaskApiDrgTaskCreatePostResponses = {
+    /**
+     * Response Create Task Api Drg Task Create Post
+     *
+     * Successful Response
+     */
+    200: string;
+};
+
+export type CreateTaskApiDrgTaskCreatePostResponse = CreateTaskApiDrgTaskCreatePostResponses[keyof CreateTaskApiDrgTaskCreatePostResponses];
+
+export type GetTaskListApiDrgTaskListGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/drg/task/list';
+};
+
+export type GetTaskListApiDrgTaskListGetResponses = {
+    /**
+     * Response Get Task List Api Drg Task List Get
+     *
+     * Successful Response
+     */
+    200: Array<TaskListResponse>;
+};
+
+export type GetTaskListApiDrgTaskListGetResponse = GetTaskListApiDrgTaskListGetResponses[keyof GetTaskListApiDrgTaskListGetResponses];
+
+export type GetTaskStatusApiDrgTaskStatusGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Task Ids
+         *
+         * The task ids to get status
+         */
+        task_ids: Array<string>;
+    };
+    url: '/api/drg/task/status';
+};
+
+export type GetTaskStatusApiDrgTaskStatusGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTaskStatusApiDrgTaskStatusGetError = GetTaskStatusApiDrgTaskStatusGetErrors[keyof GetTaskStatusApiDrgTaskStatusGetErrors];
+
+export type GetTaskStatusApiDrgTaskStatusGetResponses = {
+    /**
+     * Response Get Task Status Api Drg Task Status Get
+     *
+     * Successful Response
+     */
+    200: Array<TaskStatusResponse>;
+};
+
+export type GetTaskStatusApiDrgTaskStatusGetResponse = GetTaskStatusApiDrgTaskStatusGetResponses[keyof GetTaskStatusApiDrgTaskStatusGetResponses];
+
+export type GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/drg/task/result/{task_id}/stream';
+};
+
+export type GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetError = GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors[keyof GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors];
+
+export type GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetTaskResultApiDrgTaskResultTaskIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/drg/task/result/{task_id}';
+};
+
+export type GetTaskResultApiDrgTaskResultTaskIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTaskResultApiDrgTaskResultTaskIdGetError = GetTaskResultApiDrgTaskResultTaskIdGetErrors[keyof GetTaskResultApiDrgTaskResultTaskIdGetErrors];
+
+export type GetTaskResultApiDrgTaskResultTaskIdGetResponses = {
+    /**
+     * Response Get Task Result Api Drg Task Result  Task Id  Get
+     *
+     * Successful Response
+     */
+    200: string;
+};
+
+export type GetTaskResultApiDrgTaskResultTaskIdGetResponse = GetTaskResultApiDrgTaskResultTaskIdGetResponses[keyof GetTaskResultApiDrgTaskResultTaskIdGetResponses];
+
+export type GetTaskProgressApiDrgTaskTaskIdProgressStepGetData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+        step: TaskStep;
+    };
+    query?: never;
+    url: '/api/drg/task/{task_id}/progress/{step}';
+};
+
+export type GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTaskProgressApiDrgTaskTaskIdProgressStepGetError = GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors[keyof GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors];
+
+export type GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskProgressResponse;
+};
+
+export type GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponse = GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses[keyof GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses];
+
+export type RootGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/';
+};
+
+export type RootGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ServeSpaFullPathGetData = {
+    body?: never;
+    path: {
+        /**
+         * Full Path
+         */
+        full_path: string;
+    };
+    query?: never;
+    url: '/{full_path}';
+};
+
+export type ServeSpaFullPathGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ServeSpaFullPathGetError = ServeSpaFullPathGetErrors[keyof ServeSpaFullPathGetErrors];
+
+export type ServeSpaFullPathGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
