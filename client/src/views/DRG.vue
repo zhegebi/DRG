@@ -1,6 +1,13 @@
 <template>
     <div class="drg_agent_layout">
-        <DropDownMenu :title="'title'" :content="content"/>
+        <DropDownMenu :title="'parent'" :panel-type="'menu'" :default-open="true">
+            <DropDownMenu :title="'title1'" :content="content"/>
+            <DropDownMenu :title="'title2'" :content="content"/>
+            <DropDownMenu :title="'title3'" :content="content"/>
+            <DropDownMenu :title="'title4'" :content="content"/>
+            <DropDownMenu :title="'title5'" :content="content"/>
+            <DropDownMenu :title="'title6'" :content="content"/>
+        </DropDownMenu>
     </div>
 </template>
 

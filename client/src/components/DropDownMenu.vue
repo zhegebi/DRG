@@ -13,8 +13,16 @@
       <span class="trigger-arrow" aria-hidden="true"></span>
     </button>
 
-    <div v-if="isOpen" :id="panelId" ref="contentRef" class="dropdown-content">
-      <p>{{ content }}</p>
+    <div
+      v-if="isOpen"
+      :id="panelId"
+      ref="contentRef"
+      class="dropdown-content"
+      :class="{ 'dropdown-content--menu': panelType === 'menu' }"
+    >
+      <slot>
+        <p>{{ content }}</p>
+      </slot>
     </div>
   </div>
 </template>
@@ -26,18 +34,20 @@ interface Props {
   title?: string
   content?: string
   defaultOpen?: boolean
+  panelType?: 'text' | 'menu'
 }
 
 const props = withDefaults(defineProps<Props>(), {
   title: '下拉菜单标题',
   content: '这里可以显示下拉菜单中的详细文字内容。',
   defaultOpen: false,
+  panelType: 'text',
 })
 
 const isOpen = ref(props.defaultOpen)
 const contentRef = ref<HTMLElement | null>(null)
 const panelId = `dropdown-panel-${Math.random().toString(36).slice(2, 10)}`
-const bottomStickThreshold = 24
+const bottomStickThreshold = 15
 
 const scrollToBottom = () => {
   const content = contentRef.value
@@ -52,6 +62,8 @@ const isContentNearBottom = () => {
   return content.scrollHeight - content.scrollTop - content.clientHeight <= bottomStickThreshold
 }
 
+const shouldAutoScroll = () => props.panelType === 'text'
+
 const scrollToBottomAfterRender = async () => {
   await nextTick()
   requestAnimationFrame(scrollToBottom)
@@ -59,13 +71,13 @@ const scrollToBottomAfterRender = async () => {
 
 const toggleMenu = async () => {
   isOpen.value = !isOpen.value
-  if (!isOpen.value) return
+  if (!isOpen.value || !shouldAutoScroll()) return
 
   await scrollToBottomAfterRender()
 }
 
 onMounted(() => {
-  if (isOpen.value) {
+  if (isOpen.value && shouldAutoScroll()) {
     void scrollToBottomAfterRender()
   }
 })
@@ -74,6 +86,7 @@ watch(
   () => props.content,
   () => {
     if (!isOpen.value) return
+    if (!shouldAutoScroll()) return
     if (!isContentNearBottom()) return
 
     void scrollToBottomAfterRender()
@@ -134,18 +147,18 @@ watch(
   transform: rotate(45deg);
 }
 
-.is-open .dropdown-trigger {
+.dropdown-menu.is-open > .dropdown-trigger {
   border-color: rgba(0, 127, 212, 0.45);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
 }
 
-.is-open .trigger-arrow {
+.dropdown-menu.is-open > .dropdown-trigger .trigger-arrow {
   transform: rotate(-135deg);
 }
 
 .dropdown-content {
   margin-top: 5px;
-  height: 100px;
+  height: 60px;
   padding: 5px 15px;
   border: 1px solid rgba(0, 127, 212, 0.12);
   border-radius: 8px;
@@ -161,6 +174,20 @@ watch(
   word-break: break-word;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 127, 212, 0.35) transparent;
+}
+
+.dropdown-content--menu {
+  height: auto;
+  padding: 10px;
+  white-space: normal;
+}
+
+.dropdown-content--menu :deep(.dropdown-menu) {
+  max-width: none;
+}
+
+.dropdown-content--menu :deep(.dropdown-menu + .dropdown-menu) {
+  margin-top: 8px;
 }
 
 .dropdown-content :deep(p) {
