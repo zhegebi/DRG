@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { computed } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import SvgIcon from "@jamescoyle/vue-icon";
 import {
   mdiHomeOutline,
@@ -9,9 +9,19 @@ import {
   mdiAccountCog,
   mdiMicroscope,
   mdiFileDocumentOutline,
+  mdiLogin,
+  mdiLogout,
+  mdiAccountCircle,
 } from "@mdi/js";
+import { useAuthStore } from "@/stores/auth";
 
 const route = useRoute();
+const router = useRouter();
+const authStore = useAuthStore();
+
+// 计算属性：是否已登录
+const isLoggedIn = computed(() => authStore.isAuthenticated);
+const currentUser = computed(() => authStore.user);
 
 function jumpToGithub() {
   window.open('https://github.com/zhegebi/DRG', '_blank');
@@ -19,6 +29,29 @@ function jumpToGithub() {
 
 function jumpToAdmin() {
   alert('管理员功能待实现');
+}
+
+// 登录
+function handleLogin() {
+  router.push('/auth');
+}
+
+// 登出
+async function handleLogout() {
+  await authStore.logout();
+  // 如果当前在需要登录的页面，跳转到首页
+  if (route.meta.requiresAuth) {
+    router.push('/');
+  }
+}
+
+// 点击用户图标
+function handleUserClick() {
+  if (isLoggedIn.value) {
+    handleLogout();
+  } else {
+    handleLogin();
+  }
 }
 
 const showProjectName = computed(() => {
@@ -97,7 +130,15 @@ const isActive = (item: typeof navItems[0]) => {
         <button class="action-btn admin-btn" @click="jumpToAdmin" title="管理员">
           <SvgIcon type="mdi" :path="mdiAccountCog" class="action-icon" />
         </button>
-        <div class="user-avatar">👤</div>
+        
+        <!-- 用户图标：未登录显示登录图标，已登录显示登出图标 -->
+        <div class="user-icon" @click="handleUserClick" :title="isLoggedIn ? '点击退出登录' : '点击登录'">
+          <SvgIcon 
+            type="mdi" 
+            :path="isLoggedIn ? mdiLogout : mdiAccountCircle" 
+            class="user-icon-svg"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -107,13 +148,8 @@ const isActive = (item: typeof navItems[0]) => {
 @use '@/common/global.scss' as *;
 /* ========== 可调节参数区域 ========== */
 .control-bar {
-  /* 导航栏高度 */
   height: $control-bar-height;
-  
-  /* 阴影 */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  
-  /* 固定定位，贴合顶部和左右 */
   flex-shrink: 0;
   position: relative;
   margin: 0;
@@ -152,12 +188,6 @@ const isActive = (item: typeof navItems[0]) => {
 .control-bar .right-actions .action-btn {
   width: 34px;
   height: 34px;
-}
-
-.user-avatar {
-  width: 34px;
-  height: 34px;
-  font-size: 22px;
 }
 /* ========== 可调节参数结束 ========== */
 
@@ -238,8 +268,9 @@ const isActive = (item: typeof navItems[0]) => {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  width: 105px;
+  width: auto;
   justify-content: flex-end;
+  gap: 10px;
 }
 
 .control-bar .right-actions .action-btn {
@@ -264,17 +295,26 @@ const isActive = (item: typeof navItems[0]) => {
   fill: currentColor;
 }
 
-.user-avatar {
-  cursor: pointer;
+/* 用户图标样式 */
+.user-icon {
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   border-radius: 50%;
-  background-color: #f0f0f0;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
+  color: #5b5b5b;
 }
 
-.user-avatar:hover {
-  background-color: #e0e0e0;
+.user-icon:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.user-icon .user-icon-svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
 }
 </style>
