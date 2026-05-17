@@ -1,6 +1,5 @@
 import asyncio
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -28,7 +27,7 @@ class TaskListResponse(BaseModel):
     task_id: str
     task_name: str
     task_status: TaskStatus
-    created_at: datetime
+    should_generate_test: bool
 
 
 class TaskStatusResponse(BaseModel):
@@ -99,15 +98,20 @@ async def get_task_list(
     """
     try:
         query_result = await db_client.exec(
-            select(DrgTask.task_id, DrgTask.name, DrgTask.status, DrgTask.created_at).where(
-                DrgTask.user_id == current_user.id
-            )
+            select(DrgTask.task_id, DrgTask.name, DrgTask.status, DrgTask.should_generate_test)
+            .where(DrgTask.user_id == current_user.id)
+            .order_by(DrgTask.created_at.desc())  # type: ignore
         )
         results = query_result.all()
         task_list: list[TaskListResponse] = []
         for row in results:
             task_list.append(
-                TaskListResponse(task_id=row[0], task_name=row[1], task_status=TaskStatus(row[2]), created_at=row[3])
+                TaskListResponse(
+                    task_id=row[0],
+                    task_name=row[1],
+                    task_status=TaskStatus(row[2]),
+                    should_generate_test=row[3],
+                )
             )
         return task_list
     except HTTPException:

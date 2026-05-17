@@ -67,19 +67,55 @@
           </span>
         </div>
 
-        <DropDownMenu
-          title="任务执行面板"
-          panel-type="menu"
-          :status="selectedTask?.task_status"
-          :default-open="true"
-        >
-          <DropDownMenu title="title1" :content="content" status="pending" />
-          <DropDownMenu title="title2" :content="content" status="running" />
-          <DropDownMenu title="title3" :content="content" status="success" />
-          <DropDownMenu title="title4" :content="content" status="failed" />
-          <DropDownMenu title="title5" :content="content" status="pending" />
-          <DropDownMenu title="title6" :content="content" status="running" />
-        </DropDownMenu>
+        <div v-if="selectedTask" class="task-flow-panels">
+          <template v-if="selectedTask.should_generate_test">
+            <DropDownMenu
+              title="生成测试用例"
+              panel-type="menu"
+              :status="selectedTask.task_status"
+              :default-open="true"
+            >
+              <DropDownMenu
+                v-for="stepTitle in testCaseStepTitles"
+                :key="stepTitle"
+                :title="stepTitle"
+                :content="content"
+                :status="defaultStepStatus"
+              />
+            </DropDownMenu>
+
+            <DropDownMenu
+              title="将测试用例DRG入组"
+              panel-type="menu"
+              :status="selectedTask.task_status"
+              :default-open="true"
+            >
+              <DropDownMenu
+                v-for="stepTitle in drgGroupingStepTitles"
+                :key="stepTitle"
+                :title="stepTitle"
+                :content="content"
+                :status="defaultStepStatus"
+              />
+            </DropDownMenu>
+          </template>
+
+          <DropDownMenu
+            v-else
+            title="将电子病历DRG入组"
+            panel-type="menu"
+            :status="selectedTask.task_status"
+            :default-open="true"
+          >
+            <DropDownMenu
+              v-for="stepTitle in drgGroupingStepTitles"
+              :key="stepTitle"
+              :title="stepTitle"
+              :content="content"
+              :status="defaultStepStatus"
+            />
+          </DropDownMenu>
+        </div>
       </div>
     </div>
   </div>
@@ -104,6 +140,7 @@ interface TaskItem {
   task_id: string
   task_name: string
   task_status: TaskStatus
+  should_generate_test: boolean
 }
 
 const taskList = ref<TaskItem[]>([
@@ -111,23 +148,57 @@ const taskList = ref<TaskItem[]>([
     task_id: 'task-001',
     task_name: '医保结算病例分析',
     task_status: 'pending',
+    should_generate_test: false,
   },
   {
     task_id: 'task-002',
     task_name: 'DRG入组校验',
     task_status: 'running',
+    should_generate_test: false,
   },
   {
     task_id: 'task-003',
     task_name: '测试用例生成',
     task_status: 'success',
+    should_generate_test: true,
   },
   {
     task_id: 'task-004',
     task_name: '异常病案复核',
     task_status: 'failed',
+    should_generate_test: false,
   },
 ])
+
+const terminalTaskStatusSet = new Set<TaskStatus>(['success', 'failed'])
+
+const isUnfinishedTask = (task: TaskItem) => {
+  return !terminalTaskStatusSet.has(task.task_status)
+}
+
+const unfinishedTaskIdSet = computed(() => {
+  return new Set(
+    taskList.value
+      .filter(isUnfinishedTask)
+      .map((task) => task.task_id),
+  )
+})
+
+const defaultStepStatus: TaskStatus = 'pending'
+
+const testCaseStepTitles = [
+  '选择测试用例类型',
+  '根据测试用例类型生成测试用例',
+]
+
+const drgGroupingStepTitles = [
+  '提取病历信息',
+  '获取MDC编码',
+  '获取ADRG编码',
+  '获取并发症等级',
+  '获取DRG信息',
+  '获取最终结果',
+]
 
 const selectedTaskId = ref<string | null>(null)
 const taskInput = ref('')
@@ -176,6 +247,7 @@ const submitNewTask = () => {
     task_id: `task-${Date.now()}`,
     task_name: shouldGenerateTestCase.value ? `${taskName}（生成测试用例）` : taskName,
     task_status: 'pending',
+    should_generate_test: shouldGenerateTestCase.value,
   }
 
   taskList.value = [newTask, ...taskList.value]
@@ -399,6 +471,13 @@ const submitNewTask = () => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.task-flow-panels {
+  width: min(960px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .task-detail-label {

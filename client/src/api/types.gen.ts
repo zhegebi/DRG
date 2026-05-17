@@ -124,9 +124,9 @@ export type TaskListResponse = {
     task_name: string;
     task_status: TaskStatus;
     /**
-     * Created At
+     * Should Generate Test
      */
-    created_at: string;
+    should_generate_test: boolean;
 };
 
 /**
