@@ -317,7 +317,29 @@ async function pollProgress(taskId: string) {
       ? [...testCaseSteps, ...drgGroupingSteps]
       : [...drgGroupingSteps]
 
-    for (const step of steps) {
+    let runningIdx = -1
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const step = steps[i]
+      if (step === undefined) continue
+      const lines = stepStates.value[step]?.lines
+      if (lines && lines.length > 0) {
+        runningIdx = i
+        break
+      }
+    }
+
+    const stepsToPoll: TaskStep[] = []
+    if (runningIdx === -1) {
+      const first = steps[0]
+      if (first !== undefined) stepsToPoll.push(first)
+    } else {
+      const running = steps[runningIdx]
+      if (running !== undefined) stepsToPoll.push(running)
+      const next = steps[runningIdx + 1]
+      if (next !== undefined) stepsToPoll.push(next)
+    }
+
+    for (const step of stepsToPoll) {
       try {
         const { task_progress, is_completed } = await getTaskProgress(taskId, step)
         stepStates.value[step] = { lines: task_progress.step_log_lines }

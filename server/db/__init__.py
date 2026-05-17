@@ -23,36 +23,9 @@ def init_db():
     _ = tables  # make sure all models are imported before creating tables
     from sqlmodel import SQLModel
 
-    if not pathlib.Path(DB_DIR).exists():
+    if pathlib.Path(DB_DIR).exists() is False:
         pathlib.Path(DB_DIR).mkdir(parents=True)
-    
-    # 创建同步引擎
     sync_engine = create_engine(f"sqlite:///{DB_DIR}/{DB_FILE}")
-    
-    # 创建异步引擎 - 使用 create_async_engine 而不是 create_engine
-    async_engine = create_async_engine(
-        f"sqlite+aiosqlite:///{DB_DIR}/{DB_FILE}", 
-        echo=True, 
-        future=True
-    ) # type: ignore 
+    async_engine = create_async_engine(f"sqlite+aiosqlite:///{DB_DIR}/{DB_FILE}", echo=True)
 
     SQLModel.metadata.create_all(sync_engine)
-    
-    print(f"✅ Database initialized at {DB_DIR}/{DB_FILE}")
-
-
-# 添加 getter 函数，确保每次都能获取到正确的引擎（即使模块被重新加载）
-def get_sync_engine() -> Engine:
-    """Get sync engine, initializing if needed."""
-    global sync_engine
-    if sync_engine is None:
-        init_db()
-    return sync_engine  # type: ignore
-
-
-def get_async_engine() -> AsyncEngine:
-    """Get async engine, initializing if needed."""
-    global async_engine
-    if async_engine is None:
-        init_db()
-    return async_engine  # type: ignore

@@ -1,30 +1,22 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Generator
 
-from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from . import get_sync_engine, get_async_engine
+import server.db
 
 
-def get_session():
+def get_session() -> Generator[Session]:
     """FastAPI dependency to get a synchronous database session."""
-    # 优先使用 getter 函数获取引擎（更可靠）
-    engine = get_sync_engine()
-    if engine is None:
+    if server.db.sync_engine is None:
         raise RuntimeError("Database not initialized. Call init_db() on application startup.")
-    with Session(engine) as session:
+    with Session(server.db.sync_engine) as session:
         yield session
 
 
-async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_async_session() -> AsyncGenerator[AsyncSession]:
     """FastAPI dependency to get an asynchronous database session."""
-    # 优先使用 getter 函数获取引擎（更可靠）
-    engine = get_async_engine()
-    if engine is None:
+    if server.db.async_engine is None:
         raise RuntimeError("Database not initialized. Call init_db() on application startup.")
-
-    async_session_maker = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore
-
-    async with async_session_maker() as session:  # type: ignore
+    async with AsyncSession(server.db.async_engine) as session:
         yield session
