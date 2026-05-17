@@ -1,7 +1,6 @@
 {
-  "description": "文档布局与排版规范，适用于需求规格说明书、架构设计文档、测试文档的最终输出渲染（PDF/DOCX 或带样式的 HTML/Markdown）。",
-  "target_formats": ["pdf", "docx", "html"],
-  "notes": "对于 Markdown 输出，部分样式（如缩进、行距、表格单元格垂直居中）需要后续转换工具（如 Pandoc、CSS）支持。智能体应在生成时嵌入样式指令或根据本规范生成符合要求的标记。",
+  "description": "文档布局与排版规范。所有视觉格式约束集中于此文件,tools.py 的 CSS、workflow.py 的提示词均从此读取,不再在其他文件中硬编码格式值。",
+  "target_formats": ["pdf"],
 
   "page_setup": {
     "paper_size": "A4",
@@ -12,90 +11,201 @@
   },
 
   "font": {
-    "body_font": "宋体 / Times New Roman",
-    "title_font": "黑体 / Arial",
-    "base_size": "12pt"
+    "body_font": "SimSun",
+    "body_font_fallback": "Times New Roman",
+    "title_font": "SimHei",
+    "title_font_fallback": "Arial",
+    "mono_font": "Consolas",
+    "mono_font_fallback": "Courier New",
+    "body_size": "10.5pt",
+    "body_size_cn_name": "五号"
   },
 
   "headings": {
     "global": {
       "alignment": "left",
-      "indent": "0",
+      "text_indent": "0",
       "space_before": "1.5em",
-      "space_after": "1.5em",
-      "line_spacing": "1.5"
+      "space_after": "0.8em"
     },
     "levels": [
       {
         "level": 1,
-        "numbering_style": "chinese_upper",     
-        "numbering_format": "{number}、{title}",
-        "example": "一、引言",
-        "font_size": "18pt",
-        "bold": true
+        "html_tag": "h1",
+        "markdown_prefix": "#",
+        "numbering_style": "none",
+        "description": "文档总标题",
+        "font_size": "28pt",
+        "bold": true,
+        "alignment": "center",
+        "text_indent": "0"
       },
       {
         "level": 2,
-        "numbering_style": "decimal_dot",
-        "numbering_format": "{number}.{title}",
-        "example": "1.1 系统整体功能",
-        "font_size": "16pt",
-        "bold": true
+        "html_tag": "h2",
+        "markdown_prefix": "##",
+        "numbering_style": "chinese_upper",
+        "numbering_format": "{number}、{title}",
+        "description": "一级章节标题（如：一、引言）",
+        "font_size": "24pt",
+        "bold": true,
+        "alignment": "left",
+        "text_indent": "0"
       },
       {
         "level": 3,
-        "numbering_style": "parentheses_decimal",
-        "numbering_format": "({number}) {title}",
-        "example": "(1) 职责描述",
-        "font_size": "14pt",
-        "bold": true
+        "html_tag": "h3",
+        "markdown_prefix": "###",
+        "numbering_style": "decimal_dot",
+        "numbering_format": "{number} {title}",
+        "description": "二级章节标题（如：1.1 目的）",
+        "font_size": "20pt",
+        "bold": true,
+        "alignment": "left",
+        "text_indent": "0"
       },
       {
         "level": 4,
-        "numbering_style": "lower_letter",
-        "numbering_format": "{number}. {title}",
-        "example": "a. 详细说明",
-        "font_size": "12pt",
-        "bold": false
+        "html_tag": "h4",
+        "markdown_prefix": "####",
+        "numbering_style": "decimal_dot",
+        "numbering_format": "{number} {title}",
+        "description": "三级章节标题（如：1.1.1 系统范围）",
+        "font_size": "18pt",
+        "bold": true,
+        "alignment": "left",
+        "text_indent": "0"
+      },
+      {
+        "level": 5,
+        "html_tag": "h5",
+        "markdown_prefix": "#####",
+        "numbering_style": "parentheses_decimal",
+        "numbering_format": "({number}) {title}",
+        "numbering_style_alt": "decimal_dot_4",
+        "numbering_format_alt": "{number} {title}",
+        "description": "小点标题。默认用 (1)(2) 括号编号；当子节层级较深时可选用四段十进制编号（如：3.1.1.2 字段校验）。",
+        "font_size": "16pt",
+        "bold": true,
+        "alignment": "left",
+        "text_indent": "0"
       }
     ]
   },
 
   "body_text": {
     "alignment": "justified",
-    "first_line_indent": "2字符",      
+    "first_line_indent": "2em",
     "line_spacing": "1.25",
     "space_before": "0",
-    "space_after": "0"
+    "space_after": "0.5em"
+  },
+
+  "document_title": {
+    "alignment": "center",
+    "prefix": "DRG入组智能体系统",
+    "font_size": "22pt",
+    "bold": true,
+    "margin_top": "3em",
+    "margin_bottom": "0.5em"
+  },
+
+  "document_meta": {
+    "alignment": "center",
+    "font_size": "9pt",
+    "color": "#555",
+    "margin_bottom": "2.5em",
+    "note": "元数据不含项目名称。智能体须在文档开头（H1 标题之后）严格按以下顺序和格式生成：文档编号、版本号、编制日期、文档状态。",
+    "fields": [
+      {"key": "文档编号", "pattern": "SRS-DRG-AGENT-V{版本号}", "example": "SRS-DRG-AGENT-V1.0"},
+      {"key": "版本号", "pattern": "V{主版本}.{次版本}", "example": "V1.0"},
+      {"key": "编制日期", "pattern": "{YYYY}年{M}月", "example": "2026年3月"},
+      {"key": "文档状态", "pattern": "正式发布 | 草案 | 已定稿 | 评审中", "example": "正式发布"}
+    ]
   },
 
   "figures": {
+    "require_caption": true,
+    "note": "每张图必须紧跟一行粗体标题。编号按大章节独立计算，格式为 图{一级章节序号}-{章节内序号}，如 图2-1（第二章第一张图）。",
     "alignment": "center",
     "caption_position": "below",
-    "caption_format": "图{number}：{caption}",
-    "numbering_scope": "global",      
-    "font_style": "italic",
+    "caption_format": "{prefix}{chapter}-{number}：{caption}",
+    "prefix": "图",
+    "numbering_scope": "per_chapter",
     "font_size": "10pt",
-    "space_before_caption": "0.5em"
+    "text_indent": "0",
+    "margin": "1em 0"
   },
 
   "tables": {
+    "require_caption": true,
+    "note": "每张表必须紧跟一行粗体标题。编号按大章节独立计算，格式为 表{一级章节序号}-{章节内序号}，如 表3-2（第三章第二张表）。",
     "alignment": "center",
-    "caption_position": "below",
-    "caption_format": "表{number}：{caption}",
-    "numbering_scope": "global",
+    "caption_position": "above",
+    "caption_format": "{prefix}{chapter}-{number}：{caption}",
+    "prefix": "表",
+    "numbering_scope": "per_chapter",
+    "font_size": "10pt",
+    "text_indent": "0",
     "cell": {
       "horizontal_alignment": "center",
-      "vertical_alignment": "middle"
+      "vertical_alignment": "middle",
+      "padding": "4px 10px"
     },
-    "header_font_bold": true,
-    "font_size": "10pt"
+    "header": {
+      "bold": true,
+      "background_color": "#f0f0f0",
+      "padding": "6px 10px"
+    },
+    "border": "1px solid #000"
+  },
+
+  "code_blocks": {
+    "font_size": "9pt",
+    "line_spacing": "1.3",
+    "background_color": "#f5f5f5",
+    "border": "1px solid #ddd",
+    "padding": "8px 12px",
+    "text_indent": "0"
   },
 
   "lists": {
+    "allow_unordered": false,
+    "note": "allow_unordered=false 时 LLM 不得使用 Markdown 无序列表（- * •），应使用有序编号(a. b. c. 或 (1)(2)(3))或分段叙述。仅当 allow_unordered=true 时才可使用无序列表，此时 bullet 样式由 unordered_bullet 控制。",
     "unordered_bullet": "•",
     "ordered_style": "decimal",
-    "indent": "1em",
-    "line_spacing": "1.25"
+    "indent": "2em",
+    "line_spacing": "1.25",
+    "text_indent": "0",
+    "item_margin_bottom": "0.3em"
+  },
+
+  "page_breaks": {
+    "enabled": true,
+    "note": "分页符仅在转换为 PDF/DOCX 等格式时生效，原始 Markdown 中不可见。",
+    "rule": "每个一级章节标题（h2 / ##）前插入分页，文档总标题（h1 / #）和第一个章节之间不插入。",
+    "css": "h2 { page-break-before: always; }",
+    "exclude_first_h2": true
+  },
+
+  "rendering_conventions": {
+    "auto_caption": true,
+    "figure_caption_prefix": "图",
+    "table_caption_prefix": "表",
+    "caption_position": "下方",
+    "caption_style": "居中",
+    "numbering_scope": "全局",
+    "diagram_placement": "图表应在相关文字说明附近，并保持阅读顺序一致",
+    "note_file_for_omissions": "当智能体判断无法生成或决定不生成某些内容时，应在生成日志或单独报告文件中说明，不直接写入最终交付文档。"
+  },
+
+  "boilerplate_rules": {
+    "note": "LLM 输出中不得出现以下类型的客套话/AI声明。tools.py 的 _clean_boilerplate 会在 PDF 转换时自动剔除,workflow.py 的提示词已约束 LLM 不要生成。",
+    "forbidden_patterns": [
+      "好的,我这就为您生成...",
+      "以下是为您生成的...",
+      "以上内容由AI生成仅供参考",
+      "本文档由AI生成"
+    ]
   }
 }

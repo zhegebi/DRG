@@ -22,3 +22,4 @@ data/
 openapi.json
 
 node_modules
+.playwright/

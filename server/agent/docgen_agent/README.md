@@ -1,125 +1,144 @@
 # docgen_agent — 文档自动生成智能体
 
-基于大模型的软件工程文档自动生成系统。根据项目需求描述、文档结构规范(`output_schema.json`)和排版布局规范(`output_layout.json`)，自动生成符合 IEEE 830 / IEEE 1016 / IEEE 829 标准的专业文档。生成文档可能需要40分钟。
+基于大模型的软件工程文档自动生成系统。读取项目需求、`output_schema.json`（文档结构）和 `output_layout.json`（排版规范），生成符合 IEEE 830 / 1016 / 829 风格的需求规格说明书、架构设计文档和测试文档。
+
+**核心设计原则**：所有格式与排版规范集中在配置文件（JSON）中，提示词（prompt）仅做补充说明，不重复或覆盖配置中的规则。
 
 ## 目录结构
 
-```
+```text
 docgen_agent/
-├── workflow.py          # 智能体主循环：分批逐节生成 + 拼接 + 格式校验
-├── tools.py             # 工具定义与实现（文件读取、联网搜索、文档保存、转换接口）
-├── api.py               # [上层] FastAPI 路由，接收前端提示词和文件上传
-├── output_schema.json   # 文档结构规范（章节树、required 标记、tips、图表要求）
-├── output_layout.json   # 排版布局规范（页边距、字体、标题层级、图表 caption 格式）
-├── requirement.md       # 默认项目需求输入
-├── output_docs/         # 输出目录（.md 文档 + 渲染图表）
-└── README.md            # 本文件
+├── workflow.py            # 主循环: Phase 1→6 (读取→拆章→生成→校验→拼接→PDF)
+├── tools.py               # 工具定义、实现、渲染、CSS、PDF 转换
+├── api.py                 # FastAPI 路由 (同步/后台生成、trace、中断、下载)
+├── output_schema.json     # 文档结构: 章节树、required/tips/diagram、UML 语法指南
+├── output_layout.json     # 排版唯一来源: 页面、字体、标题、图表、表格、列表
+├── requirement.md         # 默认需求输入
+├── output_docs/           # 输出目录
+│   ├── diagrams/          # 渲染后的图片 (PNG)
+│   └── *.md / *.pdf       # 生成的文档
+├── README.md
+└── TOOLS_INSTRUCTION.md   # 工具实现原理详解
 ```
 
-## 文件功能说明
+## 生成流程
 
-### workflow.py — 智能体主循环
+| Phase | 名称 | 说明 |
+|-------|------|------|
+| 1 | 读取文件 | LLM 调用 read_requirement / read_output_schema / read_output_layout |
+| 2 | 拆解章节 | 按 schema 展开一级章节列表 |
+| 3 | 逐节生成 | 每个一级章节组独立生成，LLM 可调用 render_* / search_web |
+| 3.5 | Schema 校验 | 检查 required 章节是否都存在，缺失则重新生成 (最多 2 轮) |
+| 4 | 拼接校验 | LLM 审校全文格式、编号、图表标题，添加文档元数据 |
+| 5 | 保存 MD | 列表修正安全网 + 保存 Markdown |
+| 6 | 转 PDF | 清理 → 图表渲染 → Markdown→HTML → base64 嵌入 → Playwright 渲染 |
 
-核心编排逻辑，分 5 个阶段：
+## 支持文档
 
-| 阶段 | 说明 |
-|------|------|
-| Phase 1 读取文件 | Agent 方式调用 `read_requirement` / `read_output_schema` / `read_output_layout` |
-| Phase 2 拆解章节 | 将 `output_schema.json` 中的文档结构展开为扁平的 (子)节列表 |
-| Phase 3 逐节生成 | 每个节独立调用 LLM，上下文包含需求摘要 + schema 定义 + 排版规范 + 前后节衔接 |
-| Phase 4 拼接校验 | 合并全文 → LLM 审校标题编号、图表编号、格式一致性 |
-| Phase 5 保存 | 写入 `output_docs/{doc_type}_{timestamp}.md` |
+| doc_type | 参考标准 | 内容 |
+|----------|---------|------|
+| `需求规格说明书` | IEEE 830 | 功能需求、非功能需求、接口需求、约束和附录 |
+| `架构设计文档` | IEEE 1016 | 系统上下文、组件结构、模块详细设计、数据设计、部署视图 |
+| `测试文档` | IEEE 829 | 测试策略、测试环境、测试用例设计、测试执行计划 |
 
-关键函数：
-- `run_agent(doc_type, user_hint, source_file)` — 主入口
-- `_phase_read_files(doc_type)` — Agent 工具调用循环
-- `_generate_section(section_info, ...)` — 单节 LLM 生成
+## 配置驱动
 
-### tools.py — 工具定义与实现
+所有视觉格式由 `output_layout.json` 统一定义，CSS 生成和 LLM 提示词均从此读取，不硬编码。
 
-为 LLM Agent 提供可调用的工具函数：
+| 配置节 | 控制内容 |
+|--------|---------|
+| `page_setup` | A4 纸张、四边页边距 |
+| `font` | 正文(SimSun)、标题(SimHei)、等宽(Consolas) 及 fallback |
+| `headings` | 5 级标题的 HTML 标签、编号样式、字号、对齐 |
+| `body_text` | 两端对齐、首行缩进 2em、1.25 倍行距 |
+| `document_title` | 项目名前缀 + 文档名、22pt 居中 |
+| `document_meta` | 模板化元数据字段 (文档编号/版本号/编制日期/文档状态) |
+| `figures` | 图标题格式 `图{章}-{序号}：{caption}`、按章编号、强制标题 |
+| `tables` | 表标题在表上方、按章编号、单元格居中、长文本缩进 |
+| `lists` | 无序列表禁用 (`allow_unordered: false`) |
+| `page_breaks` | 一级章节前分页 |
 
-| 工具 | 函数 | 说明 |
+改 `output_layout.json` 即改全局排版，无需改动代码或提示词。
+
+## 图片处理
+
+### 渲染方式
+
+| 图表类型 | 工具 | 服务 |
+|---------|------|------|
+| 用例图 | `render_plantuml` | plantuml.com (deflate + PlantUML base64) |
+| 其他 UML | `render_mermaid` | mermaid.ink (`?type=png` → PNG) |
+
+### PDF 嵌入
+
+Markdown 中的 `![图](diagrams/xxx.png)` 和 ` ```mermaid/plantuml ``` ` 代码块在 PDF 转换时统一转为 `data:image/png;base64,...`，图片完全内嵌，无外部依赖。
+
+## 工具列表
+
+| 工具 | 阶段 | 说明 |
 |------|------|------|
-| `read_requirement` | `execute_tool("read_requirement", ...)` | 读取需求源文件（由前端上传或默认 requirement.md） |
-| `read_output_schema` | `execute_tool("read_output_schema", ...)` | 读取文档结构规范，支持 `doc_type` 参数裁剪 |
-| `read_output_layout` | `execute_tool("read_output_layout", ...)` | 读取排版规范 |
-| `save_document` | `execute_tool("save_document", ...)` | 保存 Markdown 到 `output_docs/` |
-| `search_web` | `execute_tool("search_web", ...)` | 联网搜索（DuckDuckGo API），补充领域知识 |
+| `read_requirement` | read | 读取需求源文件 |
+| `read_output_schema` | read | 读取文档结构 (按 doc_type 裁剪) |
+| `read_output_layout` | read | 读取排版规范 |
+| `search_web` | read/write | DuckDuckGo 搜索 |
+| `render_mermaid` | write | Mermaid → PNG (mermaid.ink) |
+| `render_plantuml` | write | PlantUML → PNG (plantuml.com) |
+| `save_document` | write | 保存 Markdown |
+| 9 个项目分析工具 | read | 文件树、源码、路由、模型、部署、测试、CI |
+| `convert_to_pdf` | convert | MD → HTML → PDF |
 
-转换接口（预留，待后续实现）：
-- `convert_to_pdf(md_path)` — Markdown → PDF
-- `convert_to_docx(md_path)` — Markdown → DOCX
-- `convert_to_txt(md_path)` — Markdown → 纯文本
+## 命令行
 
-辅助函数：
-- `set_source_file(path)` — 切换需求源文件
-- `get_doc_structure(doc_type)` — 获取文档类型结构定义
-- `flatten_sections(doc_type)` — 展开章节树为扁平列表
-
-### api.py — 前端接口
-
-FastAPI 路由（挂载在 `server/main.py`）：
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/agent/generate-doc` | 生成文档，接收 `prompt`(str) + `doc_type`(str) + `source_file`(txt/md) |
-| `GET` | `/api/agent/doc-types` | 返回支持的文档类型列表 |
-
-### output_schema.json — 文档结构规范
-
-定义三类文档的完整章节树：
-- **需求规格说明书**（参考 IEEE 830）— 引言 → 总体描述 → 具体需求 → 附录
-- **架构设计文档**（参考 IEEE 1016）— 引言 → 总体结构 → 模块详细设计 → 数据设计 → 技术选型 → 部署视图
-- **测试文档**（参考 IEEE 829）— 引言 → 测试策略 → 测试环境与工具 → 测试用例设计 → 测试执行计划
-
-每个章节节点包含：`level`（标题层级）、`required`（是否必须）、`tips`（写作提示）、`diagram`（是否需要图表）、`children`（子章节）。
-
-### output_layout.json — 排版布局规范
-
-定义渲染参数：A4 页面、2.54cm/3.17cm 页边距、宋体/黑体字体、四级标题字号（18/16/14/12pt）、图表 caption 格式、表格单元格对齐。
-
-## 使用方式
-
-### 命令行直接运行
-
-```bash
+```powershell
 # 默认生成需求规格说明书
-python -m server.agent.docgen_agent.workflow
+uv run python -m server.agent.docgen_agent.workflow
 
-# 或在代码中指定类型
-python -c "
-from server.agent.docgen_agent.workflow import run_agent
-run_agent('架构设计文档', '侧重微服务架构设计')
-"
+# 指定类型
+uv run python -c "from server.agent.docgen_agent.workflow import run_agent; run_agent(doc_type='架构设计文档')"
+
+# 首次使用需安装 Playwright 浏览器
+uv run python -m playwright install chromium
 ```
 
-### 前端 API 调用
+输出: `output_docs/{doc_type}_{timestamp}.md` + `.pdf`
+
+## 前端 API
+
+路由前缀 `/api/agent`，挂载在 `server/main.py`。
+
+### 同步生成
 
 ```bash
-# 无上传文件（使用默认 requirement.md）
 curl -X POST http://localhost:8000/api/agent/generate-doc \
-  -F "prompt=请重点关注 DRG 入组流程" \
-  -F "doc_type=需求规格说明书"
+  -F "prompt=..." -F "doc_type=需求规格说明书"
+```
 
-# 上传自定义需求文件
-curl -X POST http://localhost:8000/api/agent/generate-doc \
-  -F "prompt=生成一份完整的架构设计文档" \
-  -F "doc_type=架构设计文档" \
-  -F "source_file=@/path/to/requirements.txt"
+### 后台生成 (推荐)
+
+```bash
+curl -X POST http://localhost:8000/api/agent/generate-doc/start \
+  -F "prompt=..." -F "doc_type=需求规格说明书"
+# → {"status": "started", "run_id": "..."}
+```
+
+### trace / 控制 / 下载
+
+```bash
+GET  /api/agent/runs/{run_id}/trace       # 轮询进度
+POST /api/agent/runs/{run_id}/interrupt    # 协作式中断
+POST /api/agent/runs/{run_id}/terminate    # 协作式终止
+GET  /api/agent/runs/{run_id}/download     # 下载 MD
+GET  /api/agent/documents/{name}/download  # 按文件名下载
+GET  /api/agent/doc-types                  # 文档类型列表
 ```
 
 ## 依赖
 
-- `openai` — DeepSeek API 调用
-- `loguru` — 日志
-- `fastapi` + `python-multipart` — Web API
-- `requests` — 联网搜索
-
-## 后续扩展
-
-- [ ] `convert_to_pdf()` — 使用 `fpdf2` + `markdown` 或 `weasyprint`
-- [ ] `convert_to_docx()` — 使用 `python-docx`
-- [ ] `convert_to_txt()` — 移除 Markdown 标记
-- [ ] 流式输出 SSE（Server-Sent Events）推送生成进度
-- [ ] 批量生成三种文档
+| 依赖 | 用途 |
+|------|------|
+| `openai` | DeepSeek API 调用 |
+| `fastapi` | 前端 API |
+| `loguru` | 日志 |
+| `markdown` | MD → HTML |
+| `playwright` | Chromium 渲染 HTML → PDF |
+| `requests` | 搜索 + Mermaid/PlantUML 渲染 |

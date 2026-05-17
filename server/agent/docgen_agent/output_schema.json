@@ -1,23 +1,89 @@
 {
   "supported_output_formats": [
-    "markdown",
-    "pdf",
-    "docx"
+    "pdf"
   ],
-  "default_output_format": "markdown",
-  "layout_spec_reference": "文档结构与内容规范定义在本文件中。排版、字体大小、页边距等视觉布局规范应在另外的布局规范文件中说明。",
-  "rendering_conventions": {
-    "auto_caption": true,
-    "figure_caption_prefix": "图",
-    "table_caption_prefix": "表",
-    "caption_position": "下方",
-    "numbering_scope": "全局",
-    "caption_format": "{prefix}{number}：{caption}",
-    "caption_proximity": "与对应说明文本相近",
-    "diagram_placement": "图表应在相关文字说明附近，并保持阅读顺序一致",
-    "note_file_for_omissions": "当智能体判断无法生成或决定不生成某些内容时，应在生成日志或单独报告文件中说明，不直接写入最终交付文档。"
+  "default_output_format": "pdf",
+  "layout_spec_reference": "本文档仅定义章节结构与内容规范。所有视觉布局规范（字体、字号、行距、页边距、caption格式、图表居中、分页等）统一由 output_layout.json 管理。",
+  "plantuml_guide": {
+    "description": "PlantUML 专为标准 UML 图设计，原生支持 Actor（火柴人）、UseCase（椭圆）等 UML 元素。用例图必须使用 PlantUML 绘制，调用 render_plantuml 工具。",
+    "use_case_syntax": {
+      "description": "用例图（Use Case Diagram）。使用 actor 定义参与者（显示为火柴人），usecase 定义用例（显示为椭圆），rectangle 定义系统边界。",
+      "example": "@startuml\nleft to right direction\nactor \"编码员\" as Coder\nactor \"审核员\" as Reviewer\nrectangle \"DRG入组系统\" {\n  usecase \"提交病历\" as UC1\n  usecase \"DRG入组\" as UC2\n  usecase \"查看结果\" as UC3\n}\nCoder --> UC1\nCoder --> UC2\nUC1 ..> UC2 : <<include>>\nReviewer --> UC3\n@enduml",
+      "key_elements": ["actor 定义参与者（火柴人+角色名）", "usecase 定义用例（椭圆+用例名）", "rectangle + 花括号 {} 定义系统边界", "--> 表示关联关系", "..> 表示依赖（含 <<include>>/<<extend>>）"],
+      "render_tool": "render_plantuml"
+    }
   },
-  "global_tips": "文档生成智能体需遵守以下规则：1）章节中 required: true 的内容必须生成，缺少信息时应尽力推断或使用默认模板；2）required: false 的章节，仅当现存资料（代码、需求文本、规则文件等）不足以撰写任何合理内容时才可以省略，并且必须在文档末尾或该章节原位置输出一段说明，解释为何无法填写（例如缺少相关需求或设计信息）；3）若资料足够，即使 required: false 也应尽量生成；4）若章节要求图表，必须根据真实项目资料生成图表或图表描述，不能凭空捏造；5）图表、表格应靠近其对应文字说明，具有逻辑关联并保持适当的阅读顺序；信息不足时要说明不绘制图表；6）版本号、日期等元数据由智能体根据当前时间自动生成，不依赖本配置。",
+  "uml_diagram_guide": {
+    "description": "UML 图类型与其对应的绘制语法。智能体应根据章节需求选择合适的图表类型和工具。用例图必须使用 PlantUML（render_plantuml），其他图表使用 Mermaid（render_mermaid）。",
+    "diagram_types": {
+      "用例图": {
+        "syntax": "plantuml",
+        "description": "展示参与者(Actor，火柴人)与用例(Use Case，椭圆)之间的关系。参与者用 actor 关键字，用例用 usecase 关键字，系统边界用 rectangle。",
+        "key_elements": ["actor 定义火柴人角色", "usecase 定义椭圆用例", "rectangle 定义系统边界", "--> 关联，..> 依赖（<<include>>/<<extend>>）"],
+        "usage": "需求规格说明书 — 用于概述系统功能边界和用户交互",
+        "render_tool": "render_plantuml",
+        "code_marker": "```plantuml"
+      },
+      "活动图": {
+        "mermaid_syntax": "flowchart TD 或 stateDiagram-v2",
+        "description": "描述业务流程、操作步骤及决策分支，展示活动之间的控制流和数据流。",
+        "key_elements": ["开始/结束节点", "活动节点(方框)", "判断节点(菱形)", "泳道(可选，表示角色分工)"],
+        "usage": "需求规格说明书 — 用于描述业务流程图、功能处理流程"
+      },
+      "时序图": {
+        "mermaid_syntax": "sequenceDiagram",
+        "description": "展示对象或组件之间消息交互的时间顺序，强调消息传递的先后次序。",
+        "key_elements": ["participant(交互参与者)", "消息箭头(→ 同步 / --> 异步)", "激活框(activate/deactivate)", "可选：Note 注释、alt/else 条件分支、loop 循环"],
+        "usage": "架构设计文档 — 用于描述模块间 API 调用流程、组件交互过程"
+      },
+      "类图": {
+        "mermaid_syntax": "classDiagram",
+        "description": "展示系统的类结构、属性、方法以及类之间的关联、继承、聚合等关系。",
+        "key_elements": ["类名及属性/方法", "关系: 继承(<|--)、组合(*--)、聚合(o--)、关联(-->)、依赖(..>)"],
+        "usage": "架构设计文档 — 用于描述模块内部类结构或领域模型"
+      },
+      "状态图": {
+        "mermaid_syntax": "stateDiagram-v2",
+        "description": "描述对象在生命周期内的状态变化及触发条件，展示状态之间的转移关系。",
+        "key_elements": ["状态名称", "转移箭头及触发条件", "[*]初始/终止状态", "可选：复合状态(含子状态)"],
+        "usage": "需求规格说明书或架构设计文档 — 用于描述订单状态、审批流程等有明确状态机的场景"
+      },
+      "ER图": {
+        "mermaid_syntax": "erDiagram",
+        "description": "展示数据库实体及其关系（一对多、多对多等）和关键字段。",
+        "key_elements": ["实体名称", "主键/外键字段", "关系类型: ||--o{ 等"],
+        "usage": "架构设计文档 — 用于描述数据库设计"
+      },
+      "部署图": {
+        "mermaid_syntax": "graph TD 或 flowchart TD",
+        "description": "展示系统的物理部署拓扑，包括服务器节点、容器、网络连接。",
+        "key_elements": ["节点(服务器/容器)", "连接线标注协议或端口", "子图(subgraph)表示网络区域"],
+        "usage": "架构设计文档 — 用于描述系统部署拓扑"
+      },
+      "甘特图": {
+        "mermaid_syntax": "gantt",
+        "description": "展示项目时间线、任务排期和里程碑节点。",
+        "key_elements": ["任务名称及起止日期", "里程碑标注(crit)", "任务依赖(after)"],
+        "usage": "测试文档 — 用于描述测试执行计划和时间安排"
+      },
+      "组件图": {
+        "mermaid_syntax": "graph TD 或 flowchart TD",
+        "description": "展示系统组件之间的组织和依赖关系。使用子图(subgraph)表示组件边界。",
+        "key_elements": ["组件(方框)", "依赖关系箭头", "接口标注"],
+        "usage": "架构设计文档 — 用于描述系统整体架构和组件依赖"
+      }
+    },
+    "diagram_principles": [
+      "1. 优先根据项目实际代码和需求生成图表，不得凭空捏造",
+      "2. 每个图表应有清晰的标题和编号(如 '图1：系统用例图')",
+      "3. 图表应包含必要的图例说明",
+      "4. 参与者、类名、模块名应使用项目实际名称",
+      "5. 关系箭头上的文字应使用中文标注，便于阅读",
+      "6. 用例图使用 ```plantuml 标记 + render_plantuml 工具；其他 UML 图使用 ```mermaid 标记 + render_mermaid 工具",
+      "7. 复杂图表可适当简化，保留核心元素，避免节点过多导致可读性下降"
+    ]
+  },
+  "global_tips": "文档生成智能体需遵守以下规则：1）章节中 required: true 的内容必须生成，缺少信息时应尽力推断或使用默认模板；2）required: false 的章节，仅当现存资料不足以撰写任何合理内容时才可以省略，并在文档末尾说明原因；3）若资料足够，即使 required: false 也应尽量生成；4）若章节包含 diagram_types 字段，必须按 uml_diagram_guide 选择语法：用例图使用 PlantUML（render_plantuml），其他图使用 Mermaid（render_mermaid）；5）每张图表、每张表格必须紧跟粗体标题，编号按一级章节独立计算（格式见 output_layout.json 的 figures/tables，编号规则：图{章}-{序号}、表{章}-{序号}），图和表的序号在每个大章节内各自从 1 开始；6）图片引用：render_mermaid/render_plantuml 返回值直接用于 ![标题](返回值)，禁止自行修改路径；7）元数据由智能体根据当前时间自动生成；8）Mermaid 用 ```mermaid 标记，PlantUML 用 ```plantuml 标记；9）所有视觉排版规范从 output_layout.json 读取。",
   "documents": [
     {
       "doc_type": "需求规格说明书",
@@ -84,9 +150,10 @@
                 "description": "概括系统要解决的核心问题和高层能力。",
                 "required": true,
                 "diagram": true,
-                "tips": "可用一段文字或列表概括，不涉及细节。建议同时提供基于项目实际功能的用例图或功能分布概览图，图表必须基于真实需求信息。",
+                "diagram_types": ["用例图"],
+                "tips": "用一段文字或列表概括系统功能全貌。必须提供系统用例图(Use Case Diagram)，使用 PlantUML 语法。actor 定义参与者（火柴人），usecase 定义用例（椭圆），rectangle 定义系统边界，--> 关联，..> 依赖（<<include>>/<<extend>>）。图表必须基于真实需求信息。",
                 "tools": [
-                  "render_mermaid"
+                  "render_plantuml"
                 ]
               },
               {
@@ -128,8 +195,12 @@
                 "title": "功能需求",
                 "description": "按模块或用例描述每个功能，包括输入、处理逻辑、输出。建议使用 FR-XXX 编号。",
                 "required": true,
-                "tips": "每项功能需求应可独立测试，避免模糊描述。",
-                "tools": [],
+                "diagram": true,
+                "diagram_types": ["活动图"],
+                "tips": "每项功能需求应可独立测试，避免模糊描述。必须提供核心业务流程的活动图(Activity Diagram)，使用 Mermaid flowchart TD 或 stateDiagram-v2 语法。展示主要操作的执行顺序、决策分支和角色分工(泳道)。图表覆盖系统最核心的2-5个业务流程，图表必须基于真实需求信息。",
+                "tools": [
+                  "render_mermaid"
+                ],
                 "children": [
                   {
                     "level": 3,
@@ -177,8 +248,8 @@
                 "level": 2,
                 "title": "外部接口需求",
                 "description": "用户界面、硬件接口、软件接口（API）、通信协议。",
-                "required": false,
-                "tips": "如有明确的接口定义文档，应详细列出；否则至少说明接口类型。",
+                "required": true,
+                "tips": "必须描述用户界面、软件接口和关键通信协议；如接口定义不完整，应基于项目代码和需求给出合理抽象，并说明假设。",
                 "tools": [],
                 "children": [
                   {
@@ -193,13 +264,26 @@
                     "level": 3,
                     "title": "软件接口",
                     "description": "与其他系统或服务的 API 定义、数据格式。",
-                    "required": false,
+                    "required": true,
                     "diagram": true,
-                    "tips": "重点关注外部调用或组件间通信协议。建议补充接口调用流程图或消息交换图，图表必须基于实际接口定义。",
+                    "diagram_types": ["时序图"],
+                    "tips": "重点关注外部调用或组件间通信协议。必须提供接口调用时序图(Sequence Diagram)，使用 Mermaid sequenceDiagram 语法。列出每个 API 的 endpoint、method、request/response 格式。时序图展示关键 API 的调用流程：参与者包括前端/客户端和各后端服务，消息箭头标注接口名和主要参数。图表必须基于实际接口定义。",
                     "tools": [
                       "render_mermaid"
                     ]
                   }
+                ]
+              },
+              {
+                "level": 2,
+                "title": "业务状态模型",
+                "description": "描述核心业务对象的状态生命周期和状态转移规则。",
+                "required": true,
+                "diagram": true,
+                "diagram_types": ["状态图"],
+                "tips": "必须为至少一个核心业务对象提供状态图(State Diagram)，使用 Mermaid stateDiagram-v2 语法。优先覆盖 DRG 入组流程、文档生成任务、文档提交/版本状态等对象；标注每个状态、触发条件和动作。资料不足时基于需求和项目代码给出合理抽象并说明假设，不要省略图表。",
+                "tools": [
+                  "render_mermaid"
                 ]
               },
               {
@@ -290,7 +374,8 @@
             "description": "系统最高层次的架构视图，包括模块分区和整体架构风格。",
             "required": true,
             "diagram": true,
-            "tips": "建议配合 Mermaid 或文本框图描述。若结构简单，可仅提供图表描述；若信息不足则说明不绘制图表。",
+            "diagram_types": ["组件图"],
+            "tips": "必须提供系统组件图(Component Diagram)，使用 Mermaid flowchart TD + subgraph 语法。使用子图(subgraph)区分不同模块/层次，节点表示各组件，箭头表示依赖关系。图表必须基于项目实际模块结构。",
             "tools": [
               "render_mermaid"
             ],
@@ -309,7 +394,8 @@
                 "description": "描述系统与外部实体（用户、外部系统等）的交互关系。",
                 "required": true,
                 "diagram": true,
-                "tips": "可用文本描述或 Mermaid/ASCII 图，标明外部角色和系统边界。若结构非常简单，可仅给出图示描述；若信息不足则说明并不绘制图表。",
+                "diagram_types": ["组件图"],
+                "tips": "必须提供系统上下文图(System Context Diagram)，使用 Mermaid flowchart TD 语法。用节点表示外部系统/用户，中心节点表示本系统，箭头标注数据流方向(如 HTTP/REST、消息队列)。若结构非常简单，可仅给出图示描述。图表必须基于真实的系统边界和外部交互。",
                 "tools": [
                   "render_mermaid"
                 ]
@@ -329,8 +415,12 @@
             "title": "模块详细设计",
             "description": "每个模块的内部结构、接口和依赖。",
             "required": true,
-            "tips": "对于核心模块应详细描述，次要模块可简要概括。",
-            "tools": [],
+            "diagram": true,
+            "diagram_types": ["类图", "时序图"],
+            "tips": "对于核心模块应详细描述，次要模块可简要概括。必须提供核心模块的类图(Class Diagram)，使用 Mermaid classDiagram 语法，展示类名、关键属性/方法及类间关系(继承、组合、关联)。同时提供模块间交互的时序图。",
+            "tools": [
+              "render_mermaid"
+            ],
             "children": [
               {
                 "level": 2,
@@ -362,7 +452,8 @@
                     "description": "数据流或控制流关系。",
                     "required": true,
                     "diagram": true,
-                    "tips": "可使用序列图或文字描述。建议提供基于实际模块交互的组件图或流程图，图表必须基于真实系统交互关系。",
+                    "diagram_types": ["时序图", "类图"],
+                    "tips": "必须使用时序图(Sequence Diagram)展示本模块与其他模块的关键交互流程，使用 Mermaid sequenceDiagram 语法。参与者为各模块名称，消息箭头标注调用的函数/API名及参数。可选补充类图(Class Diagram)展示本模块内部类结构。图表必须基于真实系统交互关系。",
                     "tools": [
                       "render_mermaid"
                     ]
@@ -383,17 +474,18 @@
             "level": 1,
             "title": "数据设计",
             "description": "持久化存储、数据模型、数据流。",
-            "required": false,
-            "tips": "仅当系统涉及复杂数据存储或流转时必要；简单系统可省略。",
+            "required": true,
+            "tips": "必须描述持久化存储、核心数据模型和关键数据流。资料不足时基于项目模型、接口和需求给出合理抽象。",
             "tools": [],
             "children": [
               {
                 "level": 2,
                 "title": "数据库设计",
                 "description": "ER 图、核心表结构。",
-                "required": false,
+                "required": true,
                 "diagram": true,
-                "tips": "若有关系型数据库，应列出主要表和字段。应补充基于实际数据库结构的ER图或表关系图，图表必须基于真实数据模型。",
+                "diagram_types": ["ER图"],
+                "tips": "若有关系型数据库，应列出主要表和字段。必须提供ER图(Entity-Relationship Diagram)，使用 Mermaid erDiagram 语法。列出核心实体及其关键字段，标注主键和外键关系(||--o{ 一对多等)。图表必须基于真实数据模型。",
                 "tools": [
                   "render_mermaid"
                 ]
@@ -402,9 +494,10 @@
                 "level": 2,
                 "title": "数据流图",
                 "description": "关键数据在模块间的流转路径。",
-                "required": false,
+                "required": true,
                 "diagram": true,
-                "tips": "可使用层级数据流图（DFD）。若系统信息简单则可只给出图表说明；若资料不足则说明无法绘制图表。",
+                "diagram_types": ["活动图"],
+                "tips": "必须提供数据流图(Data Flow Diagram)，使用 Mermaid flowchart TD 语法。展示数据从源头到目的地的处理过程，标注各处理节点、数据存储和外部实体。若系统较简单可给出顶层 DFD；资料不足时基于需求和代码给出合理抽象并说明假设。",
                 "tools": [
                   "render_mermaid"
                 ]
@@ -423,17 +516,18 @@
             "level": 1,
             "title": "部署视图",
             "description": "物理部署结构（服务器、容器、网络）和配置要求。",
-            "required": false,
-            "tips": "若系统为单体应用或开发环境简单，可省略；分布式系统必须描述。",
+            "required": true,
+            "tips": "必须描述部署视图，即使是单体应用也要给出开发/测试/生产的最小部署拓扑和关键配置。",
             "tools": [],
             "children": [
               {
                 "level": 2,
                 "title": "部署图",
                 "description": "节点与组件映射关系。",
-                "required": false,
+                "required": true,
                 "diagram": true,
-                "tips": "可用 Mermaid 绘制。若系统简单可给出部署关系描述；若缺少部署信息则说明不绘制图表。",
+                "diagram_types": ["部署图"],
+                "tips": "必须提供部署图(Deployment Diagram)，使用 Mermaid flowchart TD + subgraph 语法。使用子图(subgraph)区分网络区域(如本地开发、应用服务、数据存储、外部服务)，节点标注部署的组件，箭头标注通信协议和端口。资料不足时基于项目配置给出合理抽象并说明假设，不要省略图表。",
                 "tools": [
                   "render_mermaid"
                 ]
@@ -442,7 +536,7 @@
                 "level": 2,
                 "title": "环境配置",
                 "description": "操作系统、依赖软件、环境变量等。",
-                "required": false,
+                "required": true,
                 "tips": "可参考现有部署脚本或文档。",
                 "tools": []
               }
@@ -550,9 +644,10 @@
             "level": 1,
             "title": "测试环境与工具",
             "description": "硬件、软件、网络配置以及测试工具链。",
-            "required": false,
+            "required": true,
             "diagram": true,
-            "tips": "若环境与开发环境基本一致，可简化或省略。建议补充环境拓扑图或工具链架构图，图表必须基于实际测试环境信息。",
+            "diagram_types": ["部署图"],
+            "tips": "必须提供测试环境拓扑图，使用 Mermaid flowchart TD 语法。展示测试环境中的服务器、数据库、测试工具及其连接关系；若环境与开发环境基本一致，也要给出最小拓扑并说明假设。",
             "tools": [
               "render_mermaid"
             ],
@@ -628,7 +723,8 @@
                 "description": "各测试阶段的起止时间。",
                 "required": true,
                 "diagram": true,
-                "tips": "若项目暂无明确计划，可给出建议时间表。建议补充时间线图或甘特图，图表必须基于实际测试阶段计划。",
+                "diagram_types": ["甘特图"],
+                "tips": "若项目暂无明确计划，可给出建议时间表。必须提供测试时间甘特图(Gantt Chart)，使用 Mermaid gantt 语法。标明各测试阶段的起止日期、关键里程碑(crit)和任务依赖(after)。图表必须基于实际测试阶段计划。",
                 "tools": [
                   "render_mermaid"
                 ]
@@ -646,8 +742,12 @@
                 "title": "缺陷跟踪流程",
                 "description": "缺陷状态流转、严重等级定义。",
                 "required": true,
-                "tips": "可使用通用流程模板。",
-                "tools": []
+                "diagram": true,
+                "diagram_types": ["状态图"],
+                "tips": "必须提供缺陷生命周期状态图，使用 Mermaid stateDiagram-v2 语法，覆盖新建、确认、修复、验证、关闭、重新打开等状态，并说明严重等级定义。",
+                "tools": [
+                  "render_mermaid"
+                ]
               }
             ]
           },
