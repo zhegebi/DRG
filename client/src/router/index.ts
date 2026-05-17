@@ -15,7 +15,7 @@ const routes: Array<RouteRecordRaw> = [
     {
         path: '/DRG',
         name: 'drg',
-        component: () => import('../views/DRG.vue')
+        component: () => import('../views/DRG/DRG.vue')
     }
 ]
 
