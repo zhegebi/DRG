@@ -5,7 +5,7 @@ Module to provide database utils.
 import pathlib
 
 from sqlalchemy import Engine
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import create_engine
 
 from ..config import DB_DIR, DB_FILE
@@ -26,6 +26,6 @@ def init_db():
     if pathlib.Path(DB_DIR).exists() is False:
         pathlib.Path(DB_DIR).mkdir(parents=True)
     sync_engine = create_engine(f"sqlite:///{DB_DIR}/{DB_FILE}")
-    async_engine = create_engine(f"sqlite+aiosqlite:///{DB_DIR}/{DB_FILE}", echo=True, future=True)  # type: ignore
+    async_engine = create_async_engine(f"sqlite+aiosqlite:///{DB_DIR}/{DB_FILE}", echo=True)
 
     SQLModel.metadata.create_all(sync_engine)

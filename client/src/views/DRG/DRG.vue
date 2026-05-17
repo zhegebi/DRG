@@ -72,48 +72,60 @@
             <DropDownMenu
               title="生成测试用例"
               panel-type="menu"
-              :status="selectedTask.task_status"
+              :status="getGroupStatus(testCaseSteps)"
               :default-open="true"
             >
               <DropDownMenu
-                v-for="stepTitle in testCaseStepTitles"
-                :key="stepTitle"
-                :title="stepTitle"
-                :content="content"
-                :status="defaultStepStatus"
+                v-for="step in testCaseSteps"
+                :key="step"
+                :title="stepNameMap[step]"
+                :content="getStepContent(step)"
+                :status="getStepStatus(step, testCaseSteps)"
               />
             </DropDownMenu>
 
             <DropDownMenu
               title="将测试用例DRG入组"
               panel-type="menu"
-              :status="selectedTask.task_status"
+              :status="getGroupStatus(drgGroupingSteps)"
               :default-open="true"
             >
               <DropDownMenu
-                v-for="stepTitle in drgGroupingStepTitles"
-                :key="stepTitle"
-                :title="stepTitle"
-                :content="content"
-                :status="defaultStepStatus"
+                v-for="step in drgGroupingSteps"
+                :key="step"
+                :title="stepNameMap[step]"
+                :content="getStepContent(step)"
+                :status="getStepStatus(step, drgGroupingSteps)"
+              />
+            </DropDownMenu>
+          </template>
+
+          <template v-else>
+            <DropDownMenu
+              title="将电子病历DRG入组"
+              panel-type="menu"
+              :status="getGroupStatus(drgGroupingSteps)"
+              :default-open="true"
+            >
+              <DropDownMenu
+                v-for="step in drgGroupingSteps"
+                :key="step"
+                :title="stepNameMap[step]"
+                :content="getStepContent(step)"
+                :status="getStepStatus(step, drgGroupingSteps)"
               />
             </DropDownMenu>
           </template>
 
           <DropDownMenu
-            v-else
-            title="将电子病历DRG入组"
-            panel-type="menu"
-            :status="selectedTask.task_status"
+            v-if="viewMode === 'result'"
+            title="结果"
+            panel-type="text"
             :default-open="true"
           >
-            <DropDownMenu
-              v-for="stepTitle in drgGroupingStepTitles"
-              :key="stepTitle"
-              :title="stepTitle"
-              :content="content"
-              :status="defaultStepStatus"
-            />
+            <div v-if="isLoadingResult" class="result-loading">加载结果中...</div>
+            <div v-else-if="resultContent" class="result-markdown" v-html="renderedResult"></div>
+            <div v-else class="result-empty">暂无结果</div>
           </DropDownMenu>
         </div>
       </div>
@@ -122,7 +134,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
 import {
   mdiAlertCircleOutline,
@@ -133,6 +145,16 @@ import {
   mdiSend,
 } from '@mdi/js'
 import DropDownMenu from '@/components/DropDownMenu.vue'
+import {
+  createTask,
+  getTaskList,
+  getTaskStatus,
+  getTaskResultStream,
+  getTaskResult,
+  getTaskProgress,
+} from '@/views/DRG/drg_utils'
+import type { TaskStep } from '@/api'
+import { marked } from 'marked'
 
 type TaskStatus = 'pending' | 'running' | 'success' | 'failed'
 
@@ -143,32 +165,39 @@ interface TaskItem {
   should_generate_test: boolean
 }
 
-const taskList = ref<TaskItem[]>([
-  {
-    task_id: 'task-001',
-    task_name: '医保结算病例分析',
-    task_status: 'pending',
-    should_generate_test: false,
-  },
-  {
-    task_id: 'task-002',
-    task_name: 'DRG入组校验',
-    task_status: 'running',
-    should_generate_test: false,
-  },
-  {
-    task_id: 'task-003',
-    task_name: '测试用例生成',
-    task_status: 'success',
-    should_generate_test: true,
-  },
-  {
-    task_id: 'task-004',
-    task_name: '异常病案复核',
-    task_status: 'failed',
-    should_generate_test: false,
-  },
-])
+const stepNameMap: Record<TaskStep, string> = {
+  extract_medical_record: '提取病历信息',
+  get_mdc_code: '获取MDC编码',
+  get_adrg_code: '获取ADRG编码',
+  get_mcc_cc_level: '获取并发症等级',
+  get_drg: '获取DRG信息',
+  get_final_result: '获取最终结果',
+  select_test_case_type: '选择测试用例类型',
+  generate_test_case: '根据测试用例类型生成测试用例',
+}
+
+const testCaseSteps: TaskStep[] = ['select_test_case_type', 'generate_test_case']
+const drgGroupingSteps: TaskStep[] = [
+  'extract_medical_record',
+  'get_mdc_code',
+  'get_adrg_code',
+  'get_mcc_cc_level',
+  'get_drg',
+  'get_final_result',
+]
+
+const taskList = ref<TaskItem[]>([])
+const selectedTaskId = ref<string | null>(null)
+const taskInput = ref('')
+const shouldGenerateTestCase = ref(false)
+const stepStates = ref<Record<string, { lines: string[] }>>({})
+const viewMode = ref<'progress' | 'result'>('progress')
+const resultContent = ref('')
+const isLoadingResult = ref(false)
+
+let progressTimer: ReturnType<typeof setInterval> | null = null
+let statusTimer: ReturnType<typeof setInterval> | null = null
+let pollingFlag = false
 
 const terminalTaskStatusSet = new Set<TaskStatus>(['success', 'failed'])
 
@@ -178,32 +207,9 @@ const isUnfinishedTask = (task: TaskItem) => {
 
 const unfinishedTaskIdSet = computed(() => {
   return new Set(
-    taskList.value
-      .filter(isUnfinishedTask)
-      .map((task) => task.task_id),
+    taskList.value.filter(isUnfinishedTask).map((task) => task.task_id),
   )
 })
-
-const defaultStepStatus: TaskStatus = 'pending'
-
-const testCaseStepTitles = [
-  '选择测试用例类型',
-  '根据测试用例类型生成测试用例',
-]
-
-const drgGroupingStepTitles = [
-  '提取病历信息',
-  '获取MDC编码',
-  '获取ADRG编码',
-  '获取并发症等级',
-  '获取DRG信息',
-  '获取最终结果',
-]
-
-const selectedTaskId = ref<string | null>(null)
-const taskInput = ref('')
-const shouldGenerateTestCase = ref(false)
-const content = ref('这是任务执行进度消息')
 
 const selectedTask = computed(() => {
   return taskList.value.find((task) => task.task_id === selectedTaskId.value)
@@ -211,6 +217,11 @@ const selectedTask = computed(() => {
 
 const taskInputPlaceholder = computed(() => {
   return shouldGenerateTestCase.value ? '请输入您想要的测试用例类型' : '请输入电子病历'
+})
+
+const renderedResult = computed(() => {
+  if (!resultContent.value) return ''
+  return marked(resultContent.value)
 })
 
 const statusIconMap: Record<TaskStatus, string> = {
@@ -227,6 +238,182 @@ const statusLabelMap: Record<TaskStatus, string> = {
   failed: '已失败',
 }
 
+function getStepContent(step: TaskStep): string {
+  const lines = stepStates.value[step]?.lines ?? []
+  return lines.join('\n')
+}
+
+function getStepStatus(step: TaskStep, group: TaskStep[]): TaskStatus {
+  const lines = stepStates.value[step]?.lines ?? []
+  if (lines.length === 0) return 'pending'
+
+  let lastContentIndex = -1
+  for (let i = group.length - 1; i >= 0; i--) {
+    const key = group[i]
+    if (key === undefined) continue
+    const s = stepStates.value[key]
+    if (s && s.lines.length > 0) {
+      lastContentIndex = i
+      break
+    }
+  }
+
+  const myIndex = group.indexOf(step)
+  if (myIndex === lastContentIndex) return 'running'
+  if (myIndex < lastContentIndex) return 'success'
+  return 'pending'
+}
+
+function getGroupStatus(group: TaskStep[]): TaskStatus {
+  const statuses = group.map((s) => getStepStatus(s, group))
+  if (statuses.some((s) => s === 'running')) return 'running'
+  if (statuses.every((s) => s === 'success')) return 'success'
+  return 'pending'
+}
+
+async function fetchTaskList() {
+  try {
+    const list = await getTaskList()
+    if (!list) return
+    taskList.value = list.map((item) => ({
+      task_id: item.task_id,
+      task_name: item.task_name,
+      task_status: item.task_status as TaskStatus,
+      should_generate_test: item.should_generate_test,
+    }))
+  } catch (e) {
+    console.error('获取任务列表失败:', e)
+  }
+}
+
+function stopProgressPolling() {
+  if (progressTimer !== null) {
+    clearInterval(progressTimer)
+    progressTimer = null
+  }
+}
+
+function initStepStates(task: TaskItem) {
+  const steps = task.should_generate_test
+    ? [...testCaseSteps, ...drgGroupingSteps]
+    : [...drgGroupingSteps]
+
+  const states: Record<string, { lines: string[] }> = {}
+  for (const step of steps) {
+    states[step] = { lines: [] }
+  }
+  stepStates.value = states
+}
+
+async function pollProgress(taskId: string) {
+  if (pollingFlag) return
+  pollingFlag = true
+
+  try {
+    const task = taskList.value.find((t) => t.task_id === taskId)
+    if (!task) return
+
+    const steps = task.should_generate_test
+      ? [...testCaseSteps, ...drgGroupingSteps]
+      : [...drgGroupingSteps]
+
+    for (const step of steps) {
+      try {
+        const { task_progress, is_completed } = await getTaskProgress(taskId, step)
+        stepStates.value[step] = { lines: task_progress.step_log_lines }
+
+        if (is_completed) {
+          stopProgressPolling()
+          await fetchTaskList()
+          viewMode.value = 'result'
+          loadResultStream(taskId)
+          return
+        }
+      } catch {
+        // 单步查询失败静默跳过
+      }
+    }
+  } finally {
+    pollingFlag = false
+  }
+}
+
+function startProgressPolling(taskId: string) {
+  stopProgressPolling()
+  pollProgress(taskId)
+  progressTimer = setInterval(() => pollProgress(taskId), 200)
+}
+
+async function loadResult(taskId: string) {
+  isLoadingResult.value = true
+  resultContent.value = ''
+  try {
+    const text = await getTaskResult(taskId)
+    resultContent.value = text
+  } catch (e) {
+    resultContent.value = `加载结果失败: ${e}`
+  } finally {
+    isLoadingResult.value = false
+  }
+}
+
+async function loadResultStream(taskId: string) {
+  isLoadingResult.value = true
+  resultContent.value = ''
+  try {
+    await getTaskResultStream(taskId, (chunk) => {
+      resultContent.value += chunk
+    })
+  } catch (e) {
+    resultContent.value = `加载结果失败: ${e}`
+  } finally {
+    isLoadingResult.value = false
+  }
+}
+
+function startStatusPolling() {
+  statusTimer = setInterval(async () => {
+    const ids = [...unfinishedTaskIdSet.value]
+    if (ids.length === 0) return
+
+    try {
+      const statusList = await getTaskStatus(...ids)
+      for (const item of statusList) {
+        const task = taskList.value.find((t) => t.task_id === item.task_id)
+        if (task) {
+          task.task_status = item.task_status as TaskStatus
+        }
+      }
+    } catch {
+      // 状态轮询失败静默跳过
+    }
+  }, 1000)
+}
+
+watch(selectedTaskId, (newId) => {
+  stopProgressPolling()
+  stepStates.value = {}
+  resultContent.value = ''
+  isLoadingResult.value = false
+
+  if (!newId) {
+    viewMode.value = 'progress'
+    return
+  }
+
+  const task = taskList.value.find((t) => t.task_id === newId)
+  if (!task) return
+
+  if (terminalTaskStatusSet.has(task.task_status)) {
+    viewMode.value = 'result'
+    loadResult(newId)
+  } else {
+    viewMode.value = 'progress'
+    initStepStates(task)
+    startProgressPolling(newId)
+  }
+})
+
 const openNewTask = () => {
   selectedTaskId.value = null
 }
@@ -239,22 +426,33 @@ const toggleGenerateTestCase = () => {
   shouldGenerateTestCase.value = !shouldGenerateTestCase.value
 }
 
-const submitNewTask = () => {
-  const taskName = taskInput.value.trim()
-  if (!taskName) return
+const submitNewTask = async () => {
+  const input = taskInput.value.trim()
+  if (!input) return
 
-  const newTask: TaskItem = {
-    task_id: `task-${Date.now()}`,
-    task_name: shouldGenerateTestCase.value ? `${taskName}（生成测试用例）` : taskName,
-    task_status: 'pending',
-    should_generate_test: shouldGenerateTestCase.value,
+  try {
+    const taskId = await createTask(input, shouldGenerateTestCase.value)
+    await fetchTaskList()
+    selectedTaskId.value = taskId
+    taskInput.value = ''
+    shouldGenerateTestCase.value = false
+  } catch (e) {
+    console.error('创建任务失败:', e)
   }
-
-  taskList.value = [newTask, ...taskList.value]
-  selectedTaskId.value = newTask.task_id
-  taskInput.value = ''
-  shouldGenerateTestCase.value = false
 }
+
+onMounted(() => {
+  fetchTaskList()
+  startStatusPolling()
+})
+
+onUnmounted(() => {
+  stopProgressPolling()
+  if (statusTimer !== null) {
+    clearInterval(statusTimer)
+    statusTimer = null
+  }
+})
 </script>
 
 <style lang="scss" scoped>
@@ -502,6 +700,52 @@ const submitNewTask = () => {
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.result-loading,
+.result-empty {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.result-markdown {
+  :deep(h1) {
+    margin: 16px 0 8px;
+    font-size: 20px;
+    color: #0f172a;
+  }
+
+  :deep(h2) {
+    margin: 14px 0 6px;
+    font-size: 17px;
+    color: #0f172a;
+  }
+
+  :deep(h3) {
+    margin: 12px 0 4px;
+    font-size: 15px;
+    color: #1e293b;
+  }
+
+  :deep(p) {
+    margin: 4px 0;
+    line-height: 1.8;
+  }
+
+  :deep(strong) {
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    margin: 4px 0;
+    padding-left: 20px;
+  }
+
+  :deep(li) {
+    margin: 2px 0;
+  }
 }
 
 @media (max-width: 820px) {
