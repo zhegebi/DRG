@@ -1,13 +1,12 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Generator
 
-from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 import server.db
 
 
-def get_session():
+def get_session() -> Generator[Session]:
     """FastAPI dependency to get a synchronous database session."""
     if server.db.sync_engine is None:
         raise RuntimeError("Database not initialized. Call init_db() on application startup.")
@@ -15,12 +14,9 @@ def get_session():
         yield session
 
 
-async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_async_session() -> AsyncGenerator[AsyncSession]:
     """FastAPI dependency to get an asynchronous database session."""
     if server.db.async_engine is None:
         raise RuntimeError("Database not initialized. Call init_db() on application startup.")
-
-    async_session_maker = sessionmaker(bind=server.db.async_engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore
-
-    async with async_session_maker() as session:  # type: ignore
+    async with AsyncSession(server.db.async_engine) as session:
         yield session
