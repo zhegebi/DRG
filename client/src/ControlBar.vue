@@ -6,10 +6,8 @@ import {
   mdiHomeOutline,
   mdiHome,
   mdiGithub,
-  mdiAccountCog,
   mdiMicroscope,
   mdiFileDocumentOutline,
-  mdiLogin,
   mdiLogout,
   mdiAccountCircle,
 } from "@mdi/js";
@@ -25,10 +23,6 @@ const currentUser = computed(() => authStore.user);
 
 function jumpToGithub() {
   window.open('https://github.com/zhegebi/DRG', '_blank');
-}
-
-function jumpToAdmin() {
-  alert('管理员功能待实现');
 }
 
 // 登录
@@ -126,9 +120,6 @@ const isActive = (item: typeof navItems[0]) => {
       <div class="right-actions">
         <button class="action-btn github-btn" @click="jumpToGithub" title="GitHub">
           <SvgIcon type="mdi" :path="mdiGithub" class="action-icon" />
-        </button>
-        <button class="action-btn admin-btn" @click="jumpToAdmin" title="管理员">
-          <SvgIcon type="mdi" :path="mdiAccountCog" class="action-icon" />
         </button>
         
         <!-- 用户图标：未登录显示登录图标，已登录显示登出图标 -->

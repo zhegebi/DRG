@@ -112,14 +112,23 @@
         <!-- 注册：确认密码 -->
         <div v-if="!isLoginMode" class="form-group">
           <label>确认密码</label>
-          <input
-            v-model="confirmPassword"
-            type="password"
-            placeholder="请再次输入密码"
-            required
-            :class="{ error: errors.confirmPassword }"
-            @input="clearError"
-          />
+          <div class="password-wrapper">
+            <input
+              v-model="confirmPassword"
+              :type="showConfirmPassword ? 'text' : 'password'"
+              placeholder="请再次输入密码"
+              required
+              :class="{ error: errors.confirmPassword }"
+              @input="clearError"
+            />
+            <button 
+              type="button" 
+              class="toggle-password"
+              @click="showConfirmPassword = !showConfirmPassword"
+            >
+              {{ showConfirmPassword ? '🙈' : '👁️' }}
+            </button>
+          </div>
           <span v-if="errors.confirmPassword" class="error-text">{{ errors.confirmPassword }}</span>
         </div>
 
@@ -157,6 +166,7 @@ const authStore = useAuthStore();
 const isLoginMode = ref(true);
 const loginType = ref<'email' | 'username'>('email');
 const showPassword = ref(false);
+const showConfirmPassword = ref(false);
 
 // 表单数据
 const loginIdentifier = ref('');
@@ -191,6 +201,8 @@ const switchMode = (isLogin: boolean) => {
   confirmPassword.value = '';
   loginType.value = 'email';
   authStore.error = null;
+  showPassword.value = false;
+  showConfirmPassword.value = false;
   
   // 清空错误
   Object.keys(errors).forEach(key => {
@@ -285,7 +297,6 @@ const handleSubmit = async () => {
   }
   
   if (success) {
-    // 登录成功后跳转到之前访问的页面或首页
     const redirect = (router.currentRoute.value.query.redirect as string) || '/';
     router.push(redirect);
   }
@@ -438,6 +449,23 @@ const handleSubmit = async () => {
   cursor: pointer;
   font-size: 1rem;
   padding: 0.25rem 0.5rem;
+  z-index: 1;
+}
+
+/* 隐藏浏览器原生的密码眼睛图标 */
+.password-wrapper input::-webkit-credentials-auto-fill-button,
+.password-wrapper input::-webkit-textfield-decoration-container {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.password-wrapper input::-ms-reveal {
+  display: none;
+}
+
+.password-wrapper input::-ms-clear,
+.password-wrapper input::-ms-reveal {
+  display: none;
 }
 
 .error-text {
@@ -497,6 +525,7 @@ const handleSubmit = async () => {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
 .demo-hint {
   margin-top: 1rem;
   padding: 0.75rem;
@@ -513,19 +542,6 @@ const handleSubmit = async () => {
 
 .demo-hint p:first-child {
   font-weight: bold;
-}
-.info-note {
-  margin-top: 1.5rem;
-  padding: 0.75rem;
-  background: #f8f9fa;
-  border-radius: 8px;
-  font-size: 0.7rem;
-  color: #888;
-  text-align: center;
-}
-
-.info-note p {
-  margin: 0.25rem 0;
 }
 
 @media (max-width: 480px) {

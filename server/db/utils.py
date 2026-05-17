@@ -4,23 +4,27 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from . import async_engine, sync_engine
+from . import get_sync_engine, get_async_engine
 
 
 def get_session():
     """FastAPI dependency to get a synchronous database session."""
-    if sync_engine is None:
+    # 优先使用 getter 函数获取引擎（更可靠）
+    engine = get_sync_engine()
+    if engine is None:
         raise RuntimeError("Database not initialized. Call init_db() on application startup.")
-    with Session(sync_engine) as session:
+    with Session(engine) as session:
         yield session
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency to get an asynchronous database session."""
-    if async_engine is None:
+    # 优先使用 getter 函数获取引擎（更可靠）
+    engine = get_async_engine()
+    if engine is None:
         raise RuntimeError("Database not initialized. Call init_db() on application startup.")
 
-    async_session_maker = sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore
+    async_session_maker = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore
 
     async with async_session_maker() as session:  # type: ignore
         yield session

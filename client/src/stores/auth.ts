@@ -7,7 +7,7 @@ import {
   refreshAccessTokenApiAuthRefreshPost 
 } from '@/api';
 
-// 测试模式开关
+// 测试模式开关 - 设为 true 时优先使用测试用户
 const TEST_MODE = true
 
 // 预设的测试用户（用户名/邮箱 + 密码）
@@ -81,8 +81,8 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null;
   };
 
-  // 验证用户凭据
-  const verifyCredentials = (identifier: string, password: string, type: 'email' | 'username'): User | null => {
+  // 验证预设测试用户
+  const verifyTestUser = (identifier: string, password: string, type: 'email' | 'username'): User | null => {
     const foundUser = TEST_USERS.find(u => {
       if (type === 'email') {
         return u.email.toLowerCase() === identifier.toLowerCase() && u.password === password;
@@ -102,30 +102,26 @@ export const useAuthStore = defineStore('auth', () => {
     return null;
   };
 
-  // 登录
+  // 登录：优先测试用户，其次真实后端
   const login = async (identifier: string, password: string, type: 'email' | 'username' = 'email') => {
     isLoading.value = true;
     error.value = null;
     
-    // 测试模式：验证预设用户
+    // 1. 先检查是否是测试用户
     if (TEST_MODE) {
-      // 模拟网络延迟
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const validUser = verifyCredentials(identifier, password, type);
-      if (validUser) {
-        console.log('【测试模式】登录成功', validUser);
-        setAuth(`test-token-${validUser.id}`, validUser);
+      const testUser = verifyTestUser(identifier, password, type);
+      if (testUser) {
+        console.log('【测试模式】使用测试用户登录', testUser);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setAuth(`test-token-${testUser.id}`, testUser);
         isLoading.value = false;
         return true;
-      } else {
-        error.value = '用户名/邮箱或密码错误';
-        isLoading.value = false;
-        return false;
       }
+      // 不是测试用户，继续尝试真实登录
+      console.log('【测试模式】不是测试用户，尝试真实登录');
     }
     
-    // 真实登录逻辑（测试模式下不会执行）
+    // 2. 尝试真实后端登录
     try {
       const result = await loginApiAuthLoginPost({
         body: { type, identifier, password },
@@ -144,6 +140,7 @@ export const useAuthStore = defineStore('auth', () => {
       
       const data = result.data as any;
       if (data && data.access_token) {
+        console.log('【真实登录】登录成功');
         setAuth(data.access_token);
         return true;
       }
@@ -159,20 +156,23 @@ export const useAuthStore = defineStore('auth', () => {
     }
   };
 
-  // 注册（测试模式下返回错误，提示使用预设账号）
+  // 注册：真实后端
   const signup = async (username: string, email: string, password: string) => {
     isLoading.value = true;
     error.value = null;
     
-    // 测试模式：注册功能暂不可用
+    // 检查用户名是否与测试用户冲突
     if (TEST_MODE) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      error.value = '演示模式：请使用预设账号登录 (admin/admin123 或 user/user123)';
-      isLoading.value = false;
-      return false;
+      const conflict = TEST_USERS.some(u => 
+        u.username === username || u.email === email
+      );
+      if (conflict) {
+        error.value = '用户名或邮箱与演示账号冲突，请换一个';
+        isLoading.value = false;
+        return false;
+      }
     }
     
-    // 真实注册逻辑（测试模式下不会执行）
     try {
       const result = await signupApiAuthSignupPost({
         body: { username, email, password },
@@ -195,6 +195,7 @@ export const useAuthStore = defineStore('auth', () => {
       
       const data = result.data as any;
       if (data && data.access_token) {
+        console.log('【真实注册】注册成功', { username, email });
         setAuth(data.access_token);
         return true;
       }
@@ -212,8 +213,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 登出
   const logout = async () => {
-    if (TEST_MODE) {
-      console.log('【测试模式】模拟登出');
+    // 测试模式的 token 不需要调用后端
+    if (TEST_MODE && accessToken.value?.startsWith('test-token')) {
+      console.log('【测试模式】测试用户登出');
       clearAuth();
       return;
     }
@@ -229,7 +231,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 刷新 token
   const refreshToken = async () => {
-    if (TEST_MODE) {
+    if (TEST_MODE && accessToken.value?.startsWith('test-token')) {
       return true;
     }
     

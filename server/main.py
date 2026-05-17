@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI
 
@@ -11,7 +12,8 @@ from .agent.drg_agent.api import router as drg_agent_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    # 在异步环境中执行同步的 init_db
+    await asyncio.to_thread(init_db)
     init_assets()
     yield
     # nothing to clean up on shutdown for now
