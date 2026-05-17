@@ -15,9 +15,10 @@ const scrollToNext = () => {
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
+@use "@/common/global.scss" as *;
 .full-section {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - $control-bar-height);
   width: 100%;
   scroll-snap-align: start;
   display: flex;

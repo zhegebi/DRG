@@ -91,15 +91,16 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
+@use "@/common/global.scss" as *;
 .home {
   width: 100%;
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - $control-bar-height);
   background: #f8fafc;
 }
 
 .sections-container {
-  height: calc(100vh - 64px);
+  height: calc(100vh - $control-bar-height);
   overflow-y: scroll;
   overflow-x: hidden;
   scroll-behavior: smooth;

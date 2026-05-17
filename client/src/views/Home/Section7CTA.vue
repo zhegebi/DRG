@@ -22,9 +22,10 @@ const goToDRG = () => router.push('/DRG')
 const goToGithub = () => window.open('https://github.com/zhegebi/DRG', '_blank')
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
+@use "@/common/global.scss" as *;
 .full-section {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - $control-bar-height);
   width: 100%;
   scroll-snap-align: start;
   display: flex;

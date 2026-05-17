@@ -103,11 +103,12 @@ const isActive = (item: typeof navItems[0]) => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
+@use '@/common/global.scss' as *;
 /* ========== 可调节参数区域 ========== */
 .control-bar {
   /* 导航栏高度 */
-  height: 64px;
+  height: $control-bar-height;
   
   /* 阴影 */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);

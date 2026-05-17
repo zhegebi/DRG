@@ -258,8 +258,9 @@ const submitNewTask = () => {
 </script>
 
 <style lang="scss" scoped>
+@use "@/common/global.scss" as *;
 .drg-agent-layout {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - $control-bar-height);
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   background: #f8fafc;
@@ -362,11 +363,11 @@ const submitNewTask = () => {
 }
 
 .agent-main {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - $control-bar-height);
 }
 
 .new-task-view {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - $control-bar-height);
   padding: 32px;
   box-sizing: border-box;
   display: flex;
@@ -455,7 +456,7 @@ const submitNewTask = () => {
 }
 
 .task-detail-view {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - $control-bar-height);
   padding: 28px 32px;
   box-sizing: border-box;
   display: flex;
