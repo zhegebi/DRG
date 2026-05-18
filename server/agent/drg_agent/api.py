@@ -159,16 +159,20 @@ async def get_task_result_stream(
     """
     try:
         query_result = await db_client.exec(
-            select(DrgTask.result, DrgTask.err_msg, DrgTask.status, DrgTask.should_generate_test).where(
-                DrgTask.task_id == task_id
-            )
+            select(  # type: ignore
+                DrgTask.result, DrgTask.err_msg, DrgTask.status, DrgTask.should_generate_test, DrgTask.user_input
+            ).where(DrgTask.task_id == task_id)
         )
-        result, err_msg, status, should_generate_test = query_result.first()  # type: ignore
+        result, err_msg, status, should_generate_test, user_input = query_result.first()
         if should_generate_test:
             result = DrgResultWithTestCase.model_validate_json(result)
             if status == TaskStatus.SUCCESS.value and result.test_result is not None:
                 response = f"""
                 # DRG 测试用例生成及其验证
+
+                ### 用户输入
+
+                {user_input}
 
                 ### 测试病历
 
@@ -206,6 +210,10 @@ async def get_task_result_stream(
                 response = f"""
                 # DRG 测试用例生成及其验证
 
+                ### 用户输入
+
+                {user_input}
+
                 ### 测试病历
 
                 {result.medical_record_text}
@@ -238,6 +246,12 @@ async def get_task_result_stream(
                 response = f"""
                 # DRG 入组结果报告
 
+                ### 用户输入
+
+                {user_input}
+
+                ### 入组结果
+
                 **MDC 分组**：{result.mdc}
 
                 **ADRG 分组**：{result.adrg}
@@ -253,6 +267,12 @@ async def get_task_result_stream(
             elif status == TaskStatus.FAILED.value:
                 response = f"""
                 # DRG 入组结果报告
+
+                ### 用户输入
+
+                {user_input}
+
+                ### 入组结果
 
                 **错误信息**:
                 
