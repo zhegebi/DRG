@@ -1,7 +1,10 @@
 """docgen_agent 前端接口。
 
-POST /api/agent/generate-doc      — 生成文档（支持上传 txt/md 需求文件）
-GET  /api/agent/doc-types         — 获取支持的文档类型列表
+POST /api/docgen_agent/generate-doc       — 同步生成文档（支持上传 txt/md 需求文件）
+POST /api/docgen_agent/generate-doc/start — 后台生成文档
+GET  /api/docgen_agent/runs/{run_id}/trace — 查询运行轨迹
+POST /api/docgen_agent/runs/{run_id}/hint  — 运行中追加提示
+GET  /api/docgen_agent/doc-types          — 获取支持的文档类型列表
 """
 
 import shutil
@@ -44,6 +47,7 @@ class GenerateDocResponse(BaseModel):
     run_id: str
     file_name: str = ""
     file_path: str = ""
+    pdf_path: str = ""
     doc_type: str
 
 
@@ -60,6 +64,7 @@ class AgentTraceResponse(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     output_path: Optional[str] = None
+    pdf_path: Optional[str] = None
     error: Optional[str] = None
     interrupted: bool = False
     terminated: bool = False
@@ -169,6 +174,7 @@ async def generate_doc(
             run_id=run_id,
             file_name=output_path.name,
             file_path=str(output_path),
+            pdf_path=str(output_path.with_suffix(".pdf")),
             doc_type=doc_type,
         )
     except GenerationTerminated:
@@ -241,6 +247,9 @@ async def download_generation_result(run_id: str) -> FileResponse:
     if not output_path:
         raise HTTPException(status_code=409, detail="文档尚未生成完成")
     path = _safe_output_path(str(output_path))
+    if path.suffix.lower() == ".pdf":
+        markdown_candidate = path.with_suffix(".md")
+        path = _safe_output_path(str(markdown_candidate))
     return FileResponse(
         path,
         filename=path.name,
@@ -268,6 +277,8 @@ async def append_hint(
     """在文档生成运行中追加用户提示词，下一轮 LLM 调用时会作为 user 消息注入。"""
     if source_file and source_file.filename:
         source_path = _save_uploaded_source_file(source_file)
+        if source_path is None:
+            raise HTTPException(status_code=400, detail="上传文件保存失败")
         with open(source_path, encoding="utf-8") as f:
             file_content = f.read()
         hint = f"{hint}\n\n[上传文件 {source_file.filename} 的内容]:\n{file_content[:3000]}"
@@ -283,15 +294,18 @@ async def download_generation_pdf(run_id: str) -> FileResponse:
     trace = get_generation_trace(run_id)
     if trace is None:
         raise HTTPException(status_code=404, detail=f"运行不存在: {run_id}")
+    pdf_path = trace.get("pdf_path")
     md_path = trace.get("output_path")
-    if not md_path:
+    if not pdf_path and not md_path:
         raise HTTPException(status_code=409, detail="文档尚未生成完成")
-    pdf_path = Path(str(md_path)).with_suffix(".pdf")
-    if not pdf_path.exists():
+    path = _safe_output_path(str(pdf_path or Path(str(md_path)).with_suffix(".pdf")))
+    if path.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=404, detail="PDF 文件不存在，请确认转换已完成")
+    if not path.exists():
         raise HTTPException(status_code=404, detail="PDF 文件不存在，请确认转换已完成")
     return FileResponse(
-        pdf_path,
-        filename=pdf_path.name,
+        path,
+        filename=path.name,
         media_type="application/pdf",
     )
 

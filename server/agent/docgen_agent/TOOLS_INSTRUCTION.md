@@ -20,7 +20,7 @@
 
 | 阶段 | 工具 |
 |------|------|
-| `read` | read_requirement, read_output_schema, read_output_layout, search_web, 9 个项目分析工具 |
+| `read` | read_requirement, read_output_schema, read_output_layout, search_web, 9 个细粒度项目分析工具 + 2 个聚合上下文工具 |
 | `write` | search_web, render_mermaid, render_plantuml, save_document |
 
 ## LLM 对话循环 (`_call_llm`)
@@ -28,7 +28,7 @@
 ```
 client.chat.completions.create(tools=..., messages=...)
   → LLM 返回 text + tool_calls[]
-    → execute_tool(name, arguments)
+    → execute_tool(name, arguments) 通过静态 _TOOL_HANDLERS 分发
       → 追加 tool 消息到 messages
         → 继续下一轮（最多 15 轮）
 ```
@@ -40,7 +40,7 @@ client.chat.completions.create(tools=..., messages=...)
 ## 一、资料读取工具
 
 ### read_requirement
-返回全局变量 `_source_md_content`，默认读取 `requirement.md`，可通过 `set_source_file()` 在运行时切换。`SECTION_SYSTEM_PROMPT` 将其截断到 3000 字符注入每章节上下文。
+返回全局变量 `_source_md_content`，默认读取 `requirement.md`，可通过 `set_source_file()` 在运行时切换。`SECTION_SYSTEM_PROMPT` 将需求摘要和读取阶段得到的项目上下文共同注入每章节上下文。
 
 ### read_output_schema
 预加载 `output_schema.json`，按 `doc_type` 裁剪后返回。仅保留目标文档的 `selected_document` 节点，去除其他文档类型。
@@ -50,7 +50,7 @@ client.chat.completions.create(tools=..., messages=...)
 
 ---
 
-## 二、项目分析工具（9 个）
+## 二、项目分析工具
 
 所有工具共享安全约束：
 - `_resolve_project_path()` 用 `Path.relative_to()` 防越权
@@ -68,6 +68,8 @@ client.chat.completions.create(tools=..., messages=...)
 | `read_deployment_config` | 扫描 Dockerfile/docker-compose/.env/k8s/nginx | 部署配置 |
 | `read_existing_tests` | 扫描 tests/，提取 `def test_xxx` | 测试文件 |
 | `read_ci_config` | 扫描 .github/workflows、.gitlab-ci.yml、tox.ini | CI/CD 配置 |
+| `read_architecture_context` | 聚合目录、依赖、路由、模型、部署配置和推荐图表 | 架构设计文档上下文 |
+| `read_test_context` | 聚合接口、模型、现有测试、CI、候选命令和风险区域 | 测试文档上下文 |
 
 ---
 
@@ -162,7 +164,7 @@ regex: ```(mermaid|plantuml)\n(code)```
       → <!DOCTYPE html> + <style> + <body>
 
 步骤 5: Playwright 渲染 PDF
-  └── chromium.launch() → set_content → page.pdf(A4, margins)
+  └── chromium.launch() → set_content → page.pdf(page_setup.paper_size, page_setup.margins)
 ```
 
 ### `_embed_images_as_base64`
@@ -171,7 +173,7 @@ regex: ```(mermaid|plantuml)\n(code)```
 
 ### `_center_captions`
 
-正则匹配章节标题格式，注入居中样式：
+按 `output_layout.json` 中的图表前缀匹配章节标题格式，注入居中样式：
 
 ```
 ^(图|表)\s*(?P<num>[A-Z]?\d*(?:[-.]\d+)?)(?P<sep>[：:]|\s+)(?P<title>.+)$
@@ -206,8 +208,9 @@ regex: ```(mermaid|plantuml)\n(code)```
 | `code_blocks` | `pre/code { font-family; background }` |
 | `lists` | `ul/ol/li { margin; padding }` |
 | `page_breaks` | `h2 { page-break-before: always }` |
+| `pdf_rendering` | 图片高度、表格外边距、页眉页脚模板等 PDF 渲染细节 |
 
-全局 `img` 约束：`max-width: 100%; max-height: 20cm; object-fit: contain`。
+全局 `img` 约束、figure 图片约束、页脚模板等均从 `pdf_rendering` 读取。
 
 ---
 

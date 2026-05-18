@@ -12,12 +12,19 @@ import json
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from loguru import logger
+from openai.types.chat import (
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageParam,
+    ChatCompletionToolUnionParam,
+)
 
 from .tools import (
     _fix_unordered_lists_in_md,
+    normalize_document_header,
+    normalize_heading_numbering,
     _validate_table_captions,
     client,
     OUTPUT_DIR,
@@ -31,6 +38,23 @@ CURRENT_DIR = Path(__file__).parent
 
 MAX_TRACE_EVENTS = 1000
 MAX_TRACE_TEXT = 4000
+MAX_READ_CONTEXT_CHARS = 60000
+MAX_SECTION_REQUIREMENT_CHARS = 5000
+MAX_SECTION_PROJECT_CONTEXT_CHARS = 14000
+
+_PROJECT_CONTEXT_TOOL_NAMES = {
+    "list_project_files",
+    "read_project_file",
+    "search_project",
+    "read_dependency_manifest",
+    "read_api_routes",
+    "read_data_models",
+    "read_deployment_config",
+    "read_existing_tests",
+    "read_ci_config",
+    "read_architecture_context",
+    "read_test_context",
+}
 
 _TRACE_LOCK = threading.RLock()
 _RUN_TRACES: dict[str, dict[str, Any]] = {}
@@ -71,6 +95,7 @@ def _ensure_run_state_locked(run_id: str) -> dict[str, Any]:
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
             "output_path": None,
+            "pdf_path": None,
             "error": None,
             "events": [],
             "next_event_id": 1,
@@ -99,6 +124,7 @@ def start_generation_trace(
                 "created_at": _now_iso(),
                 "updated_at": _now_iso(),
                 "output_path": None,
+                "pdf_path": None,
                 "error": None,
                 "events": [],
                 "next_event_id": 1,
@@ -133,6 +159,7 @@ def get_generation_trace(run_id: str) -> dict[str, Any] | None:
             "created_at": state.get("created_at"),
             "updated_at": state.get("updated_at"),
             "output_path": state.get("output_path"),
+            "pdf_path": state.get("pdf_path"),
             "error": state.get("error"),
             "interrupted": run_id in _INTERRUPT_FLAGS or state["status"] in {"interrupt_requested", "interrupted"},
             "terminated": run_id in _TERMINATE_FLAGS or state["status"] in {"terminate_requested", "terminated"},
@@ -207,6 +234,40 @@ def _safe_json_loads(raw: str) -> dict[str, Any]:
         return {"raw": raw}
 
 
+def _chat_message(payload: dict[str, Any]) -> ChatCompletionMessageParam:
+    return cast(ChatCompletionMessageParam, payload)
+
+
+def _chat_tools(tools: list[dict[str, Any]]) -> list[ChatCompletionToolUnionParam]:
+    return cast(list[ChatCompletionToolUnionParam], tools)
+
+
+def _function_tool_calls(tool_calls: Any) -> list[ChatCompletionMessageFunctionToolCall]:
+    if not tool_calls:
+        return []
+    return [
+        cast(ChatCompletionMessageFunctionToolCall, tool_call)
+        for tool_call in tool_calls
+        if getattr(tool_call, "type", "") == "function"
+    ]
+
+
+def _append_project_context(chunks: list[str], tool_name: str, result: str) -> None:
+    if tool_name not in _PROJECT_CONTEXT_TOOL_NAMES:
+        return
+    if not result.strip():
+        return
+    chunks.append(f"### {tool_name}\n{result}")
+
+
+def _project_context_tool_for_doc_type(doc_type: str) -> str:
+    if doc_type == "架构设计文档":
+        return "read_architecture_context"
+    if doc_type == "测试文档":
+        return "read_test_context"
+    return ""
+
+
 def _check_interrupted(run_id: Optional[str], phase: str = "") -> None:
     if not run_id:
         return
@@ -256,7 +317,8 @@ READ_PHASE_PROMPT = """\
 2. read_output_schema(doc_type="{doc_type}") — 了解文档结构
 3. read_output_layout — 了解排版规范
 
-如生成架构设计文档或测试文档，建议按需调用项目分析工具：
+如生成架构设计文档，优先调用 read_architecture_context；如生成测试文档，优先调用 read_test_context。
+如果聚合上下文不足，再按需调用细粒度项目分析工具：
 - list_project_files / read_project_file / search_project — 了解项目结构和源码
 - read_dependency_manifest — 了解技术栈和依赖
 - read_api_routes — 了解后端 API
@@ -282,7 +344,7 @@ SECTION_SYSTEM_PROMPT = """\
 {section_schema}
 ```
 
-## 排版布局规范
+## output_layout.json 规范摘录
 {layout_rules}
 
 ## {context_label}
@@ -292,43 +354,31 @@ SECTION_SYSTEM_PROMPT = """\
 {user_hint}
 
 ## 写作要求（以下规则必须严格遵守）
-0. **【文档元数据】** 文档正文最开头（# 标题之后立即）必须严格按 output_layout.json document_meta.fields 的顺序生成元数据行，每行格式 `**{{key}}：{{value}}**`。示例：`**文档编号：SRS-DRG-AGENT-V1.0**` / `**版本号：V1.0**` / `**编制日期：2026年3月**` / `**文档状态：正式发布**`。禁止自行增删字段。
-1. 内容必须详实、专业，每个章节都要做到可独立审阅的深度。充分利用领域知识（IEEE 标准、DRG 政策、ICD 编码规范等）展开论述，目标篇幅：需求规格说明书 35-45 页 A4。
-2. 严格遵循上述 schema 结构，包含所有子章节，required:true 的必须生成
-3. 覆盖每个子章节 tips 中提到的所有要素
-4. 如需图表（diagram=true），按 uml_diagram_guide 选择工具：**用例图必须用 PlantUML（render_plantuml）**，其他图用 Mermaid（render_mermaid）
-5. **图表编号规则**：按一级章节独立编号，格式见 output_layout.json。图编号: `**图{{章}}-{{序号}}：标题**`（如第二章第 1 张图 → `**图2-1：系统架构图**`）。表编号: `**表{{章}}-{{序号}}：标题**`。每个大章节内图和表各自从 1 开始计数。
-6. **图表标题**：每张图/表必须紧跟粗体标题行（禁止裸图裸表）。图表整体居中。图片路径直接使用工具返回值。
-7. 列表格式：禁止无序列表（`-` `*` `·`）。列举用 (1)(2)(3)... 或 a. b. c. 或分段叙述。
-8. **标题编号（避免碰撞）**：严格遵循 headings.levels。**核心原则：父标题和子标题不能使用同一种编号风格。**
-   | 父标题 | 父编号示例 | ##### 子标题应使用 | 原因 |
-   |--------|-----------|-------------------|------|
-   | #### (三级) | `3.1.1` | `3.1.1.1`（四段十进制） | 避免 (1)(2) 和 3.1.1 编号碰撞 |
-   | ### (二级) | `1.1` | `(1)(2)` 或 `3.1.1.1` 均可 | 无碰撞风险 |
-   | ## (一级) | `一、` | `(1)(2)`（括号风格） | 无碰撞风险 |
-   简记：##### 的父级是 #### 时禁用括号，其他情况酌情可用。
-9. **表格**：所有列名和单元格居中。Markdown 表格语法：**表头行必须在对齐行之前**（先 `| A | B |` 再 `|:---|:---|`），严禁对齐行出现在表头行前面。内容重复的术语可用表格呈现。
-10. 只输出本章节组（含子章节）的 Markdown 正文，不要输出文档总标题和元数据行（元数据由拼接阶段统一添加）
-11. 输出从该组的标题行开始（如 "## 一、引言"）
-12. 严禁输出任何客套话或 AI 声明，直接输出文档正文
-13. 生成架构设计文档时，优先用项目分析工具读取真实目录、依赖、路由、数据模型和部署配置
-14. 生成测试文档时，优先用项目分析工具读取现有测试、接口、数据模型、CI 配置和部署配置
+1. 只输出本章节组（含子章节）的 Markdown 正文，不要输出文档总标题和元数据行；总标题和元数据由拼接阶段统一添加。
+2. 输出必须从该章节组的标题行开始，并严格遵循上述 output_schema.json 结构；required:true 的章节必须生成，tips 中的内容要完整覆盖。
+3. 四级及更深标题必须使用 Markdown 标题和四段/多段十进制编号，例如 `##### 3.1.1.2 字段校验`；严禁把 `(1) 标题`、`(2) 标题` 当作标题使用，括号编号只能用于正文枚举。
+4. 所有格式、排版、标题层级、元数据字段、图表标题、表格标题、编号、列表和分页规则均以 output_layout.json 为唯一依据，不得自行创造或覆盖格式规则。
+5. 如 schema 要求图表，按 output_schema.json 的 uml_diagram_guide 和该章节 tools 字段选择并调用工具；图片路径必须直接使用工具返回值。
+6. Markdown 表格必须是可解析的标准表格：表头行、对齐行、数据行的列数必须一致；单元格内不要使用未转义的竖线；表格标题必须是 `**表X-Y：具体表名**`，不得使用“表格说明”等泛化标题。
+7. 内容必须详实、专业，每个章节都要达到可独立审阅的深度，并结合项目真实需求或代码信息展开。
+8. 生成架构设计文档时，必须基于读取阶段获得的真实目录、依赖、路由、数据模型和部署配置展开；缺失项标注“待确认”，不要编造。
+9. 生成测试文档时，必须基于读取阶段获得的现有测试、接口、数据模型、CI 配置和部署配置展开；缺失项标注“待补充”，不要编造。
+10. 严禁输出任何客套话或 AI 声明，直接输出文档正文。
 """
 
 STITCH_SYSTEM_PROMPT = """\
 你是一个专业的软件工程文档审校专家。你的任务是将多个章节片段拼接成一份完整规范的文档。
 
 ## 要求（按优先级排列）
-1. **【最高优先级 — 文档标题】** 全文第一行必须是 `# 文档标题`（一级 Markdown 标题，井号+空格+标题文本）。严禁将 `#` 标题改为 `**粗体**` 或其他格式。标题之后立即按 document_meta.fields 顺序添加元数据行，每行 `**{{key}}：{{value}}**`。删除正文中所有残留的冗余元数据行和孤立的 `**` 标记。
-2. **【无序列表修正】** 全文扫描并改写所有以 `- ` 开头的行，转为有序编号 `(1)(2)(3)...`、字母小标题 `a. b. c.` 或分段叙述。不允许任何 `- ` 开头的内容留在文档中。
-3. **【表格完整性】** 不得修改任何表格的列数和对齐语法（`|:---|` 等）。如表格单元格内文段过长，适当缩短但不改变表格结构。
-4. **【图片路径修正】** 如果路径包含 `output_docs/` 前缀，修正为 `diagrams/xxx.png`。
-5. **【图表编号修正】** 图表编号按一级章节独立计算。图和表各自从 1 开始。如有编号错乱（全局编号、跳号、重复），必须修正。
-6. **【标题碰撞修正】** 若 ##### 父标题为 ####（如 3.1.1），##### 必须用四段十进制。若父标题为 ## 或 ### 可保留括号。
-7. **【表格标题补全】** 确保每张表前有粗体标题行（**表X-Y：...**），每张图下有粗体标题行（**图X-Y：...**）。
-8. 输出完整的 Markdown 文档，严禁客套话或 AI 声明。
+1. 全文第一行必须保留为一级 Markdown 文档标题；标题之后立即按 output_layout.json 的 document_meta.fields 顺序生成元数据行。
+2. 所有格式、排版、标题层级、图表标题、表格标题、编号、列表和分页规则均以 output_layout.json 为唯一依据。
+3. 删除正文中重复或残留的元数据行、孤立格式标记、客套话和 AI 声明。
+4. 表格必须保持标准 Markdown 结构：表头行、对齐行、数据行列数一致；发现坏表格时修复列数和表头，不要把表格降级成普通文本。
+5. 图片路径必须使用工具返回的相对路径；如出现输出目录前缀，只保留相对 output_docs 的路径。
+6. 图表与表格的标题、位置和编号必须按 output_layout.json 对应配置修正。
+7. 输出完整 Markdown 文档，严禁客套话或 AI 声明。
 
-## 排版规范（output_layout.json）
+## output_layout.json 规范摘录
 {layout_rules}
 
 ## 文档结构（output_schema.json）
@@ -336,81 +386,43 @@ STITCH_SYSTEM_PROMPT = """\
 """
 
 
-# ============================================================
-# 流式响应处理（Phase 1 用）
-# ============================================================
-class _FakeMessage:
-    def __init__(self, content="", tool_calls=None):
-        self.content = content
-        self.tool_calls = tool_calls or []
+def _layout_prompt_excerpt(layout: str) -> str:
+    """生成给模型看的布局规范摘录，内容值全部来自 output_layout.json。"""
+    try:
+        layout_obj = json.loads(layout)
+    except json.JSONDecodeError:
+        return layout
 
-
-class _FakeToolCall:
-    def __init__(self, tc_id, name, arguments):
-        self.id = tc_id
-        self.function = _FakeFunction(name, arguments)
-
-
-class _FakeFunction:
-    def __init__(self, name, arguments):
-        self.name = name
-        self.arguments = arguments
-
-
-def _handle_streaming_response(stream) -> _FakeMessage:
-    collected_content = ""
-    collected_tool_calls: dict[int, dict] = {}
-
-    print("\n" + "─" * 60)
-    print("[文档撰写中，实时预览]")
-    print("─" * 60)
-
-    for chunk in stream:
-        delta = chunk.choices[0].delta if chunk.choices else None
-        if delta is None:
-            continue
-        if delta.content:
-            collected_content += delta.content
-            print(delta.content, end="", flush=True)
-        if delta.tool_calls:
-            for tc_delta in delta.tool_calls:
-                idx = tc_delta.index
-                if idx not in collected_tool_calls:
-                    collected_tool_calls[idx] = {
-                        "id": tc_delta.id or "",
-                        "function": {"name": "", "arguments": ""},
-                    }
-                if tc_delta.id:
-                    collected_tool_calls[idx]["id"] = tc_delta.id
-                if tc_delta.function:
-                    if tc_delta.function.name:
-                        collected_tool_calls[idx]["function"]["name"] += tc_delta.function.name
-                    if tc_delta.function.arguments:
-                        collected_tool_calls[idx]["function"]["arguments"] += tc_delta.function.arguments
-
-    print("\n" + "─" * 60)
-
-    tool_calls_list = []
-    for idx in sorted(collected_tool_calls.keys()):
-        tc = collected_tool_calls[idx]
-        tool_calls_list.append(_FakeToolCall(tc["id"], tc["function"]["name"], tc["function"]["arguments"]))
-
-    return _FakeMessage(collected_content, tool_calls_list if tool_calls_list else None)
+    keys = (
+        "document_meta",
+        "headings",
+        "figures",
+        "tables",
+        "lists",
+        "page_breaks",
+        "pdf_rendering",
+        "rendering_conventions",
+        "boilerplate_rules",
+    )
+    excerpt = {key: layout_obj.get(key) for key in keys if key in layout_obj}
+    return json.dumps(excerpt, ensure_ascii=False, indent=2)
 
 
 # ============================================================
 # Phase 1: 读取文件
 # ============================================================
-def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str, str, str]:
-    """Agent 方式读取 requirement, schema, layout；返回三份文本。"""
-    messages = [
-        {"role": "system", "content": READ_PHASE_PROMPT.format(doc_type=doc_type)},
-        {"role": "user", "content": f"请读取生成 {doc_type} 所需的所有文件。"},
+def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str, str, str, str]:
+    """Agent 方式读取 requirement, schema, layout 和项目上下文。"""
+    messages: list[ChatCompletionMessageParam] = [
+        _chat_message({"role": "system", "content": READ_PHASE_PROMPT.format(doc_type=doc_type)}),
+        _chat_message({"role": "user", "content": f"请读取生成 {doc_type} 所需的所有文件。"}),
     ]
 
     requirement = ""
     schema = ""
     layout = ""
+    project_context_chunks: list[str] = []
+    read_completed = False
 
     for turn in range(6):
         _check_interrupted(run_id, "read_files")
@@ -419,7 +431,7 @@ def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str,
         resp = client.chat.completions.create(
             model="deepseek-v4-pro",
             messages=messages,
-            tools=get_tools_for_phase("read"),
+            tools=_chat_tools(get_tools_for_phase("read")),
             temperature=0.0,
         )
         _check_interrupted(run_id, "read_files")
@@ -429,24 +441,25 @@ def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str,
         if msg.content:
             _record_trace(run_id, "assistant_message", phase="read_files", turn=turn, content=msg.content)
 
-        if msg.tool_calls:
-            names = [tc.function.name for tc in msg.tool_calls]
+        tool_calls = _function_tool_calls(msg.tool_calls)
+        if tool_calls:
+            names = [tc.function.name for tc in tool_calls]
             logger.info(f"  [读取阶段] 调用: {names}")
             _record_trace(run_id, "tool_calls_planned", phase="read_files", turn=turn, tools=names)
 
-            tc_list = []
-            for tc in msg.tool_calls:
+            tc_list: list[dict[str, Any]] = []
+            for tc in tool_calls:
                 tc_list.append({
                     "id": tc.id,
                     "type": "function",
                     "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                 })
-            assistant_msg = {"role": "assistant", "content": msg.content or None, "tool_calls": tc_list}
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": msg.content or None, "tool_calls": tc_list}
             if hasattr(msg, "reasoning_content") and msg.reasoning_content:
                 assistant_msg["reasoning_content"] = msg.reasoning_content
-            messages.append(assistant_msg)
+            messages.append(_chat_message(assistant_msg))
 
-            for tc in msg.tool_calls:
+            for tc in tool_calls:
                 _check_interrupted(run_id, "read_files")
                 func_name = tc.function.name
                 func_args = _safe_json_loads(tc.function.arguments)
@@ -468,27 +481,94 @@ def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str,
                     result=result,
                 )
                 _check_interrupted(run_id, "read_files")
-                messages.append({
+                messages.append(_chat_message({
                     "role": "tool", "tool_call_id": tc.id, "content": result,
-                })
+                }))
                 if func_name == "read_requirement":
                     requirement = result
                 elif func_name == "read_output_schema":
                     schema = result
                 elif func_name == "read_output_layout":
                     layout = result
+                else:
+                    _append_project_context(project_context_chunks, func_name, result)
 
-            if requirement and schema and layout:
+            context_required = bool(_project_context_tool_for_doc_type(doc_type))
+            if requirement and schema and layout and (not context_required or project_context_chunks):
                 logger.info("  [读取阶段] 三份文件全部读取完毕")
                 _record_trace(run_id, "phase_completed", phase="read_files", message="三份文件全部读取完毕")
+                read_completed = True
                 break
         else:
             # LLM 直接输出文字，追加到对话继续
             if msg.content:
-                messages.append({"role": "assistant", "content": msg.content})
-            messages.append({"role": "user", "content": "请继续调用工具读取文件。"})
+                messages.append(_chat_message({"role": "assistant", "content": msg.content}))
+            messages.append(_chat_message({"role": "user", "content": "请继续调用工具读取文件。"}))
 
-    return requirement, schema, layout
+    fallback_calls = []
+    if not requirement:
+        fallback_calls.append(("read_requirement", {}))
+    if not schema:
+        fallback_calls.append(("read_output_schema", {"doc_type": doc_type}))
+    if not layout:
+        fallback_calls.append(("read_output_layout", {}))
+
+    for func_name, func_args in fallback_calls:
+        logger.warning(f"  [读取阶段] LLM 未返回 {func_name}，使用工具兜底读取")
+        _record_trace(
+            run_id,
+            "tool_call",
+            phase="read_files",
+            name=func_name,
+            arguments=func_args,
+            fallback=True,
+        )
+        result = execute_tool(func_name, func_args)
+        _record_trace(
+            run_id,
+            "tool_result",
+            phase="read_files",
+            name=func_name,
+            result=result,
+            fallback=True,
+        )
+        if func_name == "read_requirement":
+            requirement = result
+        elif func_name == "read_output_schema":
+            schema = result
+        elif func_name == "read_output_layout":
+            layout = result
+
+    context_tool = _project_context_tool_for_doc_type(doc_type)
+    if context_tool and not project_context_chunks:
+        logger.warning(f"  [读取阶段] 未获得项目上下文，使用 {context_tool} 兜底读取")
+        _record_trace(
+            run_id,
+            "tool_call",
+            phase="read_files",
+            name=context_tool,
+            arguments={},
+            fallback=True,
+        )
+        result = execute_tool(context_tool, {})
+        _append_project_context(project_context_chunks, context_tool, result)
+        _record_trace(
+            run_id,
+            "tool_result",
+            phase="read_files",
+            name=context_tool,
+            result=result,
+            fallback=True,
+        )
+
+    if not read_completed and requirement and schema and layout:
+        _record_trace(run_id, "phase_completed", phase="read_files", message="读取阶段已完成")
+
+    project_context = "\n\n".join(project_context_chunks)
+    if len(project_context) > MAX_READ_CONTEXT_CHARS:
+        project_context = project_context[:MAX_READ_CONTEXT_CHARS] + "\n...[项目上下文已截断]"
+
+    return requirement, schema, layout, project_context
 
 
 # ============================================================
@@ -497,19 +577,17 @@ def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str,
 def _call_llm(
     system_prompt: str,
     user_prompt: str,
-    tools: list | None = None,
+    tools: list[dict[str, Any]] | None = None,
     *,
     run_id: Optional[str] = None,
     phase: str = "llm",
 ) -> str:
     """同步调用 LLM，返回文本。如果有工具调用，执行并继续对话。"""
-    msgs = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
+    msgs: list[ChatCompletionMessageParam] = [
+        _chat_message({"role": "system", "content": system_prompt}),
+        _chat_message({"role": "user", "content": user_prompt}),
     ]
-    kwargs = dict(model="deepseek-v4-pro", messages=msgs, temperature=0.4)
-    if tools:
-        kwargs["tools"] = tools
+    tool_params = _chat_tools(tools) if tools else None
 
     max_turns = 15  # 留够图表渲染（可能多次重试）+ 联网搜索 + 写正文的轮次
     for turn in range(max_turns):
@@ -517,9 +595,21 @@ def _call_llm(
         # 注入用户追加的提示词
         hints = _consume_pending_hints(run_id)
         for hint in hints:
-            kwargs["messages"].append({"role": "user", "content": f"[用户补充指示] {hint}"})
+            msgs.append(_chat_message({"role": "user", "content": f"[用户补充指示] {hint}"}))
         _record_trace(run_id, "llm_request", phase=phase, turn=turn, has_tools=bool(tools))
-        resp = client.chat.completions.create(**kwargs)
+        if tool_params:
+            resp = client.chat.completions.create(
+                model="deepseek-v4-pro",
+                messages=msgs,
+                tools=tool_params,
+                temperature=0.4,
+            )
+        else:
+            resp = client.chat.completions.create(
+                model="deepseek-v4-pro",
+                messages=msgs,
+                temperature=0.4,
+            )
         _check_interrupted(run_id, phase)
         msg = resp.choices[0].message
         if hasattr(msg, "reasoning_content") and msg.reasoning_content:
@@ -527,28 +617,29 @@ def _call_llm(
         if msg.content:
             _record_trace(run_id, "assistant_message", phase=phase, turn=turn, content=msg.content)
 
-        if msg.tool_calls:
+        tool_calls = _function_tool_calls(msg.tool_calls)
+        if tool_calls:
             # 处理工具调用
-            tc_list = []
-            for tc in msg.tool_calls:
+            tc_list: list[dict[str, Any]] = []
+            for tc in tool_calls:
                 tc_list.append({
                     "id": tc.id,
                     "type": "function",
                     "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                 })
-            assistant_msg = {"role": "assistant", "content": msg.content or None, "tool_calls": tc_list}
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": msg.content or None, "tool_calls": tc_list}
             if hasattr(msg, "reasoning_content") and msg.reasoning_content:
                 assistant_msg["reasoning_content"] = msg.reasoning_content
-            msgs.append(assistant_msg)
+            msgs.append(_chat_message(assistant_msg))
             _record_trace(
                 run_id,
                 "tool_calls_planned",
                 phase=phase,
                 turn=turn,
-                tools=[tc.function.name for tc in msg.tool_calls],
+                tools=[tc.function.name for tc in tool_calls],
             )
 
-            for tc in msg.tool_calls:
+            for tc in tool_calls:
                 _check_interrupted(run_id, phase)
                 func_name = tc.function.name
                 func_args = _safe_json_loads(tc.function.arguments)
@@ -570,12 +661,9 @@ def _call_llm(
                     result=result,
                 )
                 _check_interrupted(run_id, phase)
-                msgs.append({
+                msgs.append(_chat_message({
                     "role": "tool", "tool_call_id": tc.id, "content": result,
-                })
-
-            # 继续对话
-            kwargs["messages"] = msgs
+                }))
         else:
             # 直接返回内容
             content = msg.content or ""
@@ -583,9 +671,8 @@ def _call_llm(
                 return content
             else:
                 # 如果内容为空，继续对话
-                msgs.append({"role": "assistant", "content": content})
-                msgs.append({"role": "user", "content": "请继续生成内容。"})
-                kwargs["messages"] = msgs
+                msgs.append(_chat_message({"role": "assistant", "content": content}))
+                msgs.append(_chat_message({"role": "user", "content": "请继续生成内容。"}))
 
     # 如果达到最大轮次，返回空
     return ""
@@ -610,10 +697,20 @@ def _get_top_sections(doc_type: str) -> list[dict]:
     return result
 
 
+def _section_context_excerpt(requirement: str, project_context: str) -> str:
+    parts = [f"### 需求源文档摘要\n{requirement[:MAX_SECTION_REQUIREMENT_CHARS]}"]
+    if project_context.strip():
+        parts.append(
+            "### 项目分析上下文\n"
+            f"{project_context[:MAX_SECTION_PROJECT_CONTEXT_CHARS]}"
+        )
+    return "\n\n".join(parts)
+
+
 def _generate_section_group(
     group: dict,
     requirement: str,
-    _schema_text: str,
+    project_context: str,
     layout: str,
     doc_type: str,
     user_hint: str,
@@ -626,14 +723,15 @@ def _generate_section_group(
     context_text = f"上一章: {prev_title or '(无，这是第一章)'}\n下一章: {next_title or '(无，这是最后一章)'}"
     phase = f"generate_section:{group['title']}"
     group_schema = json.dumps(group.get("schema", group), ensure_ascii=False, indent=2)
+    layout_excerpt = _layout_prompt_excerpt(layout)
 
     prompt = SECTION_SYSTEM_PROMPT.format(
         doc_type=doc_type,
-        requirement_summary=requirement[:3000],
+        requirement_summary=_section_context_excerpt(requirement, project_context),
         section_path=group["title"],
         section_description=group.get("description", ""),
         section_schema=group_schema[:8000],
-        layout_rules=layout[:4000],
+        layout_rules=layout_excerpt,
         context_label=context_label,
         context_text=context_text,
         user_hint=user_hint,
@@ -695,23 +793,6 @@ def _section_contains(sub_sec: dict, group: dict) -> bool:
     return False
 
 
-def _summarize_section(content: str, max_chars: int = 300) -> str:
-    """对已生成章节做极简摘要，供后续章节参考。"""
-    lines = content.strip().split("\n")
-    summary_lines = []
-    chars = 0
-    for line in lines:
-        if line.startswith("#"):
-            summary_lines.append(line)
-            chars += len(line)
-        elif chars < max_chars:
-            summary_lines.append(line[:200])
-            chars += len(line)
-        else:
-            break
-    return "\n".join(summary_lines)
-
-
 # ============================================================
 # 主入口
 # ============================================================
@@ -745,7 +826,7 @@ def run_agent(
         logger.info("=" * 50)
         logger.info("Phase 1: 读取文件")
         _record_trace(run_id, "phase_started", phase="read_files", message="读取需求、结构和排版规范")
-        requirement, schema_text, layout = _phase_read_files(doc_type, run_id=run_id)
+        requirement, _schema_text, layout, project_context = _phase_read_files(doc_type, run_id=run_id)
 
         # ── Phase 2: 拆解章节（按一级标题分组）──
         _check_interrupted(run_id, "split_sections")
@@ -774,7 +855,7 @@ def run_agent(
             next_title = top_sections[i + 1]["title"] if i + 1 < len(top_sections) else ""
 
             content = _generate_section_group(
-                group, requirement, schema_text, layout, doc_type,
+                group, requirement, project_context, layout, doc_type,
                 user_hint, prev_title, next_title, run_id=run_id,
             )
             # 校验生成内容
@@ -782,7 +863,7 @@ def run_agent(
                 logger.warning(f"  章节 {group['title']} 生成内容过短，重试...")
                 _record_trace(run_id, "section_retry", phase="generate_sections", title=group["title"])
                 content = _generate_section_group(
-                    group, requirement, schema_text, layout, doc_type,
+                    group, requirement, project_context, layout, doc_type,
                     user_hint, prev_title, next_title, run_id=run_id,
                 )
             generated.append(content)
@@ -820,7 +901,7 @@ def run_agent(
                                 prev_title = top_sections[j - 1]["title"] if j > 0 else ""
                                 next_title = top_sections[j + 1]["title"] if j + 1 < len(top_sections) else ""
                                 content = _generate_section_group(
-                                    group, requirement, schema_text, layout, doc_type,
+                                    group, requirement, project_context, layout, doc_type,
                                     user_hint, prev_title, next_title, run_id=run_id,
                                 )
                                 if content and len(content.strip()) >= 100:
@@ -851,21 +932,15 @@ def run_agent(
         full_body = "\n".join(parts)
         _record_trace(run_id, "document_stitched", phase="stitch", content=full_body)
 
-        # LLM 格式校验
-        stitch_prompt = STITCH_SYSTEM_PROMPT.format(
-            layout_rules=layout[:2000],
-            doc_structure_summary=json.dumps(
-                get_doc_structure(doc_type), ensure_ascii=False, indent=2
-            )[:3000],
-        )
-        logger.info("  向 LLM 提交全文校验...")
-        final_doc = _call_llm(
-            stitch_prompt,
-            f"请审校并修正以下文档的格式问题，确保编号连续、格式规范:\n\n{full_body}",
-            run_id=run_id,
+        # 全文拼接只做确定性规范化，避免最终 LLM 审校压缩正文或引入重复元数据。
+        final_doc = normalize_document_header(full_body, doc_type)
+        _record_trace(
+            run_id,
+            "phase_completed",
             phase="stitch",
+            content=final_doc,
+            deterministic=True,
         )
-        _record_trace(run_id, "phase_completed", phase="stitch", content=final_doc)
 
         # ── Phase 5: 保存 Markdown ──
         _check_interrupted(run_id, "save")
@@ -874,9 +949,13 @@ def run_agent(
         _record_trace(run_id, "phase_started", phase="save")
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"{doc_type}_{ts}.md"
-        md_output_path = OUTPUT_DIR / file_name
+        final_doc = normalize_heading_numbering(final_doc)
         final_doc = _fix_unordered_lists_in_md(final_doc)
-        md_output_path.write_text(final_doc, encoding="utf-8")
+        final_doc, table_issues = _validate_table_captions(final_doc)
+        for issue in table_issues:
+            logger.warning(f"  表格修复: {issue}")
+            _record_trace(run_id, "table_repaired", phase="save", message=issue)
+        md_output_path = Path(execute_tool("save_document", {"file_name": file_name, "content": final_doc, "doc_type": doc_type}))
         logger.info(f"Markdown 已保存至: {md_output_path}")
         _record_trace(run_id, "phase_completed", phase="save", markdown_path=str(md_output_path))
 
@@ -892,12 +971,13 @@ def run_agent(
             "phase_completed",
             phase="convert_pdf",
             markdown_path=str(md_output_path),
-            output_path=str(pdf_output_path),
+            pdf_path=str(pdf_output_path),
         )
         _set_run_status(
             run_id,
             "completed",
-            output_path=str(pdf_output_path),
+            output_path=str(md_output_path),
+            pdf_path=str(pdf_output_path),
             error=None,
         )
 

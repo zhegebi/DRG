@@ -80,12 +80,22 @@
         "level": 5,
         "html_tag": "h5",
         "markdown_prefix": "#####",
-        "numbering_style": "parentheses_decimal",
-        "numbering_format": "({number}) {title}",
-        "numbering_style_alt": "decimal_dot_4",
-        "numbering_format_alt": "{number} {title}",
-        "description": "小点标题。默认用 (1)(2) 括号编号；当子节层级较深时可选用四段十进制编号（如：3.1.1.2 字段校验）。",
+        "numbering_style": "decimal_dot_4",
+        "numbering_format": "{number} {title}",
+        "description": "四级标题必须使用四段十进制编号（如：3.1.1.2 字段校验）。禁止使用 (1)(2) 作为标题编号；括号编号仅可用于正文枚举。",
         "font_size": "16pt",
+        "bold": true,
+        "alignment": "left",
+        "text_indent": "0"
+      },
+      {
+        "level": 6,
+        "html_tag": "h6",
+        "markdown_prefix": "######",
+        "numbering_style": "decimal_dot_5",
+        "numbering_format": "{number} {title}",
+        "description": "兜底标题层级。仅当模型输出六级标题时使用，字号必须大于正文，避免 PDF 中标题小于正文。",
+        "font_size": "14pt",
         "bold": true,
         "alignment": "left",
         "text_indent": "0"
@@ -121,7 +131,17 @@
       {"key": "版本号", "pattern": "V{主版本}.{次版本}", "example": "V1.0"},
       {"key": "编制日期", "pattern": "{YYYY}年{M}月", "example": "2026年3月"},
       {"key": "文档状态", "pattern": "正式发布 | 草案 | 已定稿 | 评审中", "example": "正式发布"}
-    ]
+    ],
+    "defaults": {
+      "版本号": "V1.0",
+      "编制日期": "2026年3月",
+      "文档状态": "正式发布"
+    },
+    "document_numbers": {
+      "需求规格说明书": "SRS-DRG-AGENT-V1.0",
+      "架构设计文档": "ADD-DRG-AGENT-V1.0",
+      "测试文档": "TEST-DRG-AGENT-V1.0"
+    }
   },
 
   "figures": {
@@ -188,13 +208,30 @@
     "exclude_first_h2": true
   },
 
+  "pdf_rendering": {
+    "title_page_min_height": "24cm",
+    "doc_meta_line_margin": "0.2em 0",
+    "image_max_width": "100%",
+    "image_max_height": "20cm",
+    "figure_image_max_width": "100%",
+    "figure_image_max_height": "18cm",
+    "caption_margin_top": "0.5em",
+    "table_margin": "0.5em auto",
+    "inline_code_padding": "1px 3px",
+    "list_margin": "0.5em 0",
+    "horizontal_rule_border": "1px solid #ccc",
+    "horizontal_rule_margin": "1.5em 0",
+    "pdf_header_template": "<span style=\"font-size:1pt;color:transparent;\">&nbsp;</span>",
+    "pdf_footer_template": "<div style=\"font-size:9pt;text-align:center;width:100%;margin:0;padding:0;\">第 <span class=\"pageNumber\"></span> 页</div>"
+  },
+
   "rendering_conventions": {
     "auto_caption": true,
     "figure_caption_prefix": "图",
     "table_caption_prefix": "表",
-    "caption_position": "下方",
+    "caption_position": "按 figures.caption_position 与 tables.caption_position 分别执行",
     "caption_style": "居中",
-    "numbering_scope": "全局",
+    "numbering_scope": "per_chapter",
     "diagram_placement": "图表应在相关文字说明附近，并保持阅读顺序一致",
     "note_file_for_omissions": "当智能体判断无法生成或决定不生成某些内容时，应在生成日志或单独报告文件中说明，不直接写入最终交付文档。"
   },

@@ -47,7 +47,7 @@ import {
   mdiProgressClock,
 } from '@mdi/js'
 
-type DropDownStatus = 'pending' | 'running' | 'success' | 'failed'
+export type DropDownStatus = 'pending' | 'running' | 'success' | 'failed'
 
 interface Props {
   title?: string

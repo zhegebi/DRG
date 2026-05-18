@@ -11,7 +11,7 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/DocGen',
     name: 'docgen',
-    component: () => import('../views/Doc.vue'),
+    component: () => import('../views/DocGen/DocGen.vue'),
     meta: { requiresAuth: true }
   },
   {

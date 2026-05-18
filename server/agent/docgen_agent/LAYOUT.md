@@ -18,6 +18,7 @@ output_layout.json
 ├── code_blocks         # 代码块样式
 ├── lists               # 列表样式 + 无序列表开关
 ├── page_breaks         # 分页规则
+├── pdf_rendering       # PDF 渲染细节（图片、页脚、表格间距等）
 ├── rendering_conventions  # 渲染习惯 (LLM 参考)
 └── boilerplate_rules   # 禁止的 LLM 客套话
 ```
@@ -197,7 +198,13 @@ h2:first-of-type { page-break-before: avoid; }
 
 ## rendering_conventions
 
-LLM 渲染习惯参考: `auto_caption`、`diagram_placement`、`note_file_for_omissions`。
+LLM 渲染习惯参考: `auto_caption`、`diagram_placement`、`note_file_for_omissions`。图表编号范围以 `figures.numbering_scope` 和 `tables.numbering_scope` 为准。
+
+---
+
+## pdf_rendering
+
+PDF 专用渲染细节，如标题页高度、图片最大高度、表格外边距、页眉页脚模板等。`tools.py` 不再直接硬编码这些值，而是从该配置节读取。
 
 ---
 

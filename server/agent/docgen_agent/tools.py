@@ -12,20 +12,21 @@
     search_project     — 搜索项目源码/配置
     read_api_routes    — 汇总后端路由
     read_data_models   — 汇总数据模型线索
+    read_architecture_context — 汇总架构设计文档上下文
+    read_test_context  — 汇总测试文档上下文
     convert_to_pdf     — MD → PDF（含排版样式）
-    convert_to_docx    — [预留] MD → DOCX
-    convert_to_txt     — [预留] MD → 纯文本
 """
 
 import base64
 import fnmatch
 import html as html_module
 import json
+import os
 import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional, cast
 
 from loguru import logger
 from openai import OpenAI
@@ -111,7 +112,9 @@ def set_source_file(path: str | Path) -> None:
 # ============================================================
 # 工具定义
 # ============================================================
-TOOLS = [
+ToolDefinition = dict[str, Any]
+
+TOOLS: list[ToolDefinition] = [
     {
         "type": "function",
         "function": {
@@ -279,6 +282,22 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_architecture_context",
+            "description": "一次性汇总架构设计文档需要的项目上下文，包括目录、依赖、API、数据模型、部署配置和推荐图表。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_test_context",
+            "description": "一次性汇总测试文档需要的项目上下文，包括现有测试、接口、数据模型、CI 配置、测试命令和风险区域。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "render_mermaid",
             "description": "将 Mermaid 图表代码渲染为 PNG 图片文件。"
             "返回值为相对于 output_docs/ 的图片路径（如 'diagrams/use_case.png'），请直接将该路径用于 Markdown 图片引用 ![标题](返回值)，不要自行拼接或修改路径。",
@@ -316,139 +335,215 @@ TOOLS = [
 ]
 
 
-def get_tools_for_phase(phase: str) -> list[dict]:
+_PROJECT_READ_TOOL_NAMES = (
+    "list_project_files",
+    "read_project_file",
+    "search_project",
+    "read_dependency_manifest",
+    "read_api_routes",
+    "read_data_models",
+    "read_deployment_config",
+    "read_existing_tests",
+    "read_ci_config",
+    "read_architecture_context",
+    "read_test_context",
+)
+_READ_TOOL_NAMES = (
+    "read_requirement",
+    "read_output_schema",
+    "read_output_layout",
+    "search_web",
+    *_PROJECT_READ_TOOL_NAMES,
+)
+_WRITE_TOOL_NAMES = (
+    "search_web",
+    "render_mermaid",
+    "render_plantuml",
+    "save_document",
+)
+def _tool_name(tool: ToolDefinition) -> str:
+    function = cast(dict[str, Any], tool["function"])
+    return str(function["name"])
+
+
+_TOOL_BY_NAME: dict[str, ToolDefinition] = {_tool_name(tool): tool for tool in TOOLS}
+
+
+def get_tools_for_phase(phase: str) -> list[ToolDefinition]:
     """返回某阶段可用的工具列表。
 
     'read'  — 文件读取阶段（read_* + search_web）
     'write' — 撰写阶段（search_web + save_document）
     """
-    project_tools = (
-        "list_project_files",
-        "read_project_file",
-        "search_project",
-        "read_dependency_manifest",
-        "read_api_routes",
-        "read_data_models",
-        "read_deployment_config",
-        "read_existing_tests",
-        "read_ci_config",
-    )
     if phase == "read":
-        return [t for t in TOOLS if t["function"]["name"] in (
-            "read_requirement", "read_output_schema", "read_output_layout", "search_web", *project_tools
-        )]
-    elif phase == "write":
-        return [t for t in TOOLS if t["function"]["name"] in (
-            "search_web", "render_mermaid", "render_plantuml", "save_document"
-        )]
+        return [_TOOL_BY_NAME[name] for name in _READ_TOOL_NAMES]
+    if phase == "write":
+        return [_TOOL_BY_NAME[name] for name in _WRITE_TOOL_NAMES]
     return TOOLS
 
 
 # ============================================================
 # 工具实现
 # ============================================================
+ToolHandler = Callable[[dict], str]
+
+
+def _handle_read_requirement(_arguments: dict) -> str:
+    logger.info("   read_requirement → 返回需求文档")
+    return _source_md_content
+
+
+def _handle_read_output_schema(arguments: dict) -> str:
+    doc_type = arguments.get("doc_type")
+    if not doc_type:
+        logger.info("   read_output_schema (全部)")
+        return json.dumps(_OUTPUT_SCHEMA, ensure_ascii=False, indent=2)
+
+    logger.info(f"   read_output_schema(doc_type='{doc_type}')")
+    for doc in _OUTPUT_SCHEMA.get("documents", []):
+        if doc.get("doc_type") == doc_type:
+            slim = {
+                "supported_output_formats": _OUTPUT_SCHEMA.get("supported_output_formats"),
+                "rendering_conventions": _OUTPUT_SCHEMA.get("rendering_conventions"),
+                "global_tips": _OUTPUT_SCHEMA.get("global_tips"),
+                "selected_document": doc,
+            }
+            return json.dumps(slim, ensure_ascii=False, indent=2)
+    return json.dumps({"error": f"未找到文档类型: {doc_type}"}, ensure_ascii=False)
+
+
+def _handle_read_output_layout(_arguments: dict) -> str:
+    logger.info("   read_output_layout → 返回排版规范")
+    return _OUTPUT_LAYOUT
+
+
+def _handle_save_document(arguments: dict) -> str:
+    file_name = Path(arguments.get("file_name", "output.md")).name
+    content = arguments.get("content", "")
+    doc_type = str(arguments.get("doc_type", ""))
+    if doc_type:
+        content = normalize_document_header(content, doc_type)
+    content = normalize_heading_numbering(content)
+    content = _fix_unordered_lists_in_md(content)
+    content, table_issues = _validate_table_captions(content)
+    for issue in table_issues:
+        logger.warning(f"   save_document 表格修复: {issue}")
+    output_path = OUTPUT_DIR / file_name
+    output_path.write_text(content, encoding="utf-8")
+    logger.info(f"   save_document → {output_path}")
+    return str(output_path)
+
+
+def _handle_search_web(arguments: dict) -> str:
+    query = arguments.get("query", "")
+    logger.info(f"   search_web: {query[:80]}...")
+    return _do_web_search(query)
+
+
+def _handle_list_project_files(arguments: dict) -> str:
+    return list_project_files(
+        root=arguments.get("root", ""),
+        patterns=arguments.get("patterns") or None,
+        max_files=int(arguments.get("max_files") or 300),
+    )
+
+
+def _handle_read_project_file(arguments: dict) -> str:
+    return read_project_file(
+        path=arguments.get("path", ""),
+        max_chars=int(arguments.get("max_chars") or _MAX_TOOL_CHARS),
+    )
+
+
+def _handle_search_project(arguments: dict) -> str:
+    return search_project(
+        pattern=arguments.get("pattern", ""),
+        glob=arguments.get("glob", ""),
+        max_results=int(arguments.get("max_results") or 80),
+    )
+
+
+def _handle_read_dependency_manifest(_arguments: dict) -> str:
+    return read_dependency_manifest()
+
+
+def _handle_read_api_routes(_arguments: dict) -> str:
+    return read_api_routes()
+
+
+def _handle_read_data_models(_arguments: dict) -> str:
+    return read_data_models()
+
+
+def _handle_read_deployment_config(_arguments: dict) -> str:
+    return read_deployment_config()
+
+
+def _handle_read_existing_tests(_arguments: dict) -> str:
+    return read_existing_tests()
+
+
+def _handle_read_ci_config(_arguments: dict) -> str:
+    return read_ci_config()
+
+
+def _handle_read_architecture_context(_arguments: dict) -> str:
+    return read_architecture_context()
+
+
+def _handle_read_test_context(_arguments: dict) -> str:
+    return read_test_context()
+
+
+def _handle_render_mermaid(arguments: dict) -> str:
+    code = arguments.get("code", "")
+    file_name = arguments.get("file_name", "diagram")
+    fmt = arguments.get("format", "png")
+    logger.info(f"   render_mermaid → {DIAGRAM_DIR / file_name}.{fmt}")
+    return _render_mermaid_to_file(code, file_name, fmt)
+
+
+def _handle_render_plantuml(arguments: dict) -> str:
+    code = arguments.get("code", "")
+    file_name = arguments.get("file_name", "diagram")
+    logger.info(f"   render_plantuml → {DIAGRAM_DIR / file_name}.png")
+    return _render_plantuml_to_file(code, file_name)
+
+
+def _handle_convert_to_pdf(arguments: dict) -> str:
+    md_path = arguments.get("md_path", "")
+    logger.info(f"   convert_to_pdf: {md_path}")
+    return convert_to_pdf(md_path)
+
+
+_TOOL_HANDLERS: dict[str, ToolHandler] = {
+    "read_requirement": _handle_read_requirement,
+    "read_output_schema": _handle_read_output_schema,
+    "read_output_layout": _handle_read_output_layout,
+    "save_document": _handle_save_document,
+    "search_web": _handle_search_web,
+    "list_project_files": _handle_list_project_files,
+    "read_project_file": _handle_read_project_file,
+    "search_project": _handle_search_project,
+    "read_dependency_manifest": _handle_read_dependency_manifest,
+    "read_api_routes": _handle_read_api_routes,
+    "read_data_models": _handle_read_data_models,
+    "read_deployment_config": _handle_read_deployment_config,
+    "read_existing_tests": _handle_read_existing_tests,
+    "read_ci_config": _handle_read_ci_config,
+    "read_architecture_context": _handle_read_architecture_context,
+    "read_test_context": _handle_read_test_context,
+    "render_mermaid": _handle_render_mermaid,
+    "render_plantuml": _handle_render_plantuml,
+    "convert_to_pdf": _handle_convert_to_pdf,
+}
+
+
 def execute_tool(name: str, arguments: dict) -> str:
-    if name == "read_requirement":
-        logger.info("   read_requirement → 返回需求文档")
-        return _source_md_content
-
-    elif name == "read_output_schema":
-        doc_type = arguments.get("doc_type")
-        if doc_type:
-            logger.info(f"   read_output_schema(doc_type='{doc_type}')")
-            for doc in _OUTPUT_SCHEMA.get("documents", []):
-                if doc.get("doc_type") == doc_type:
-                    slim = {
-                        "supported_output_formats": _OUTPUT_SCHEMA.get("supported_output_formats"),
-                        "rendering_conventions": _OUTPUT_SCHEMA.get("rendering_conventions"),
-                        "global_tips": _OUTPUT_SCHEMA.get("global_tips"),
-                        "selected_document": doc,
-                    }
-                    return json.dumps(slim, ensure_ascii=False, indent=2)
-            return json.dumps({"error": f"未找到文档类型: {doc_type}"}, ensure_ascii=False)
-        else:
-            logger.info("   read_output_schema (全部)")
-            return json.dumps(_OUTPUT_SCHEMA, ensure_ascii=False, indent=2)
-
-    elif name == "read_output_layout":
-        logger.info("   read_output_layout → 返回排版规范")
-        return _OUTPUT_LAYOUT
-
-    elif name == "save_document":
-        file_name = arguments.get("file_name", "output.md")
-        content = arguments.get("content", "")
-        output_path = OUTPUT_DIR / file_name
-        output_path.write_text(content, encoding="utf-8")
-        logger.info(f"   save_document → {output_path}")
-        return str(output_path)
-
-    elif name == "search_web":
-        query = arguments.get("query", "")
-        logger.info(f"   search_web: {query[:80]}...")
-        return _do_web_search(query)
-
-    elif name == "list_project_files":
-        return list_project_files(
-            root=arguments.get("root", ""),
-            patterns=arguments.get("patterns") or None,
-            max_files=int(arguments.get("max_files") or 300),
-        )
-
-    elif name == "read_project_file":
-        return read_project_file(
-            path=arguments.get("path", ""),
-            max_chars=int(arguments.get("max_chars") or _MAX_TOOL_CHARS),
-        )
-
-    elif name == "search_project":
-        return search_project(
-            pattern=arguments.get("pattern", ""),
-            glob=arguments.get("glob", ""),
-            max_results=int(arguments.get("max_results") or 80),
-        )
-
-    elif name == "read_dependency_manifest":
-        return read_dependency_manifest()
-
-    elif name == "read_api_routes":
-        return read_api_routes()
-
-    elif name == "read_data_models":
-        return read_data_models()
-
-    elif name == "read_deployment_config":
-        return read_deployment_config()
-
-    elif name == "read_existing_tests":
-        return read_existing_tests()
-
-    elif name == "read_ci_config":
-        return read_ci_config()
-
-    elif name == "render_mermaid":
-        code = arguments.get("code", "")
-        file_name = arguments.get("file_name", "diagram")
-        fmt = arguments.get("format", "png")
-        logger.info(f"   render_mermaid → {DIAGRAM_DIR / file_name}.{fmt}")
-        return _render_mermaid_to_file(code, file_name, fmt)
-
-    elif name == "render_plantuml":
-        code = arguments.get("code", "")
-        file_name = arguments.get("file_name", "diagram")
-        logger.info(f"   render_plantuml → {DIAGRAM_DIR / file_name}.png")
-        return _render_plantuml_to_file(code, file_name)
-
-    # ── 转换接口 ──
-    elif name == "convert_to_pdf":
-        md_path = arguments.get("md_path", "")
-        logger.info(f"   convert_to_pdf: {md_path}")
-        return convert_to_pdf(md_path)
-    elif name == "convert_to_docx":
-        return f"[预留] DOCX 转换功能尚未实现。参数: {arguments}"
-    elif name == "convert_to_txt":
-        return f"[预留] TXT 转换功能尚未实现。参数: {arguments}"
-
-    return f"未知工具: {name}"
+    handler = _TOOL_HANDLERS.get(name)
+    if handler is None:
+        return f"未知工具: {name}"
+    return handler(arguments)
 
 
 # ============================================================
@@ -487,8 +582,22 @@ def _iter_project_files(root: str | Path = "", patterns: list[str] | None = None
     base = _resolve_project_path(root)
     if not base.exists():
         return []
-    candidates = [base] if base.is_file() else [p for p in base.rglob("*") if p.is_file()]
     result = []
+
+    if base.is_file():
+        candidates = [base]
+    else:
+        candidates = []
+        for dirpath, dirnames, filenames in os.walk(base):
+            current_dir = Path(dirpath)
+            dirnames[:] = [
+                dirname
+                for dirname in dirnames
+                if dirname not in _IGNORED_DIRS
+                and not _is_ignored_path(Path(_rel(current_dir / dirname)))
+            ]
+            candidates.extend(current_dir / filename for filename in filenames)
+
     for path in candidates:
         rel_path = _rel(path)
         if _is_ignored_path(Path(rel_path)):
@@ -581,10 +690,17 @@ def read_dependency_manifest() -> str:
         "pyproject.toml",
         "requirements.txt",
         "requirements-dev.txt",
+        "server/requirements.txt",
+        "server/requirements-dev.txt",
         "package.json",
+        "client/package.json",
+        "server/package.json",
         "pnpm-lock.yaml",
+        "client/pnpm-lock.yaml",
         "yarn.lock",
+        "client/yarn.lock",
         "package-lock.json",
+        "client/package-lock.json",
         "uv.lock",
     ]
     manifests = []
@@ -735,6 +851,144 @@ def read_ci_config() -> str:
     return json.dumps({"ci_files": entries, "truncated": len(files) > 30}, ensure_ascii=False, indent=2)
 
 
+def _json_tool_payload(raw: str) -> dict:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"raw": raw}
+    return value if isinstance(value, dict) else {"value": value}
+
+
+def _candidate_test_commands(dependencies: dict, existing_tests: dict) -> list[str]:
+    commands: list[str] = []
+    manifests = dependencies.get("manifests", [])
+    for manifest in manifests if isinstance(manifests, list) else []:
+        if not isinstance(manifest, dict):
+            continue
+        path = str(manifest.get("path", ""))
+        scripts = manifest.get("scripts", {})
+        if path.endswith("package.json") and isinstance(scripts, dict):
+            for script_name in ("test", "test:unit", "test:e2e", "coverage", "lint", "type-check", "build"):
+                if script_name in scripts:
+                    commands.append(f"npm run {script_name}")
+        if path.endswith("pyproject.toml"):
+            deps = manifest.get("dependencies", [])
+            dev_deps = manifest.get("dev_dependencies", [])
+            dep_items = []
+            for value in (deps, dev_deps):
+                if isinstance(value, list):
+                    dep_items.extend(value)
+                elif isinstance(value, dict):
+                    dep_items.extend(value)
+                elif value:
+                    dep_items.append(value)
+            dep_text = " ".join(str(item) for item in dep_items)
+            dep_text_lower = dep_text.lower()
+            if "pytest" in dep_text_lower:
+                commands.extend(["python -m pytest", "uv run pytest"])
+            if "ruff" in dep_text_lower:
+                commands.append("uv run ruff check server")
+            if "ty" in dep_text_lower:
+                commands.append("uv run ty check server")
+
+    test_files = existing_tests.get("test_files", [])
+    if test_files and not any("pytest" in command for command in commands):
+        commands.append("python -m pytest")
+    return list(dict.fromkeys(commands))
+
+
+def read_architecture_context() -> str:
+    """汇总架构设计文档需要的项目上下文。"""
+    file_patterns = [
+        "server/**/*.py",
+        "client/src/**/*",
+        "pyproject.toml",
+        "package.json",
+        "README.md",
+        "server/**/README.md",
+        "client/**/README.md",
+        "Dockerfile",
+        "docker-compose*.yml",
+        "docker-compose*.yaml",
+    ]
+    payload = {
+        "project_root": str(PROJECT_ROOT),
+        "project_files": _json_tool_payload(list_project_files(patterns=file_patterns, max_files=220)),
+        "dependencies": _json_tool_payload(read_dependency_manifest()),
+        "api_routes": _json_tool_payload(read_api_routes()),
+        "data_models": _json_tool_payload(read_data_models()),
+        "deployment_config": _json_tool_payload(read_deployment_config()),
+        "recommended_diagrams": [
+            {
+                "name": "系统上下文图",
+                "tool": "render_mermaid",
+                "syntax": "flowchart TB",
+                "source": "project_files + dependencies",
+            },
+            {
+                "name": "容器/组件图",
+                "tool": "render_mermaid",
+                "syntax": "flowchart TB",
+                "source": "project_files + api_routes",
+            },
+            {
+                "name": "核心接口时序图",
+                "tool": "render_mermaid",
+                "syntax": "sequenceDiagram",
+                "source": "api_routes",
+            },
+            {
+                "name": "数据模型图",
+                "tool": "render_mermaid 或 render_plantuml",
+                "syntax": "erDiagram 或 classDiagram",
+                "source": "data_models",
+            },
+            {
+                "name": "部署视图",
+                "tool": "render_mermaid",
+                "syntax": "flowchart TB",
+                "source": "deployment_config",
+            },
+        ],
+        "writing_guidance": [
+            "优先引用真实目录、依赖、路由和模型；缺失信息需要标注为待确认，不要编造实现细节。",
+            "状态图、组件图和部署图优先使用 TB/从上到下方向，避免横向过宽。",
+            "接口章节应从 api_routes 中提取真实 path/method/prefix。",
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def read_test_context() -> str:
+    """汇总测试文档需要的项目上下文。"""
+    dependencies = _json_tool_payload(read_dependency_manifest())
+    existing_tests = _json_tool_payload(read_existing_tests())
+    payload = {
+        "project_root": str(PROJECT_ROOT),
+        "dependencies": dependencies,
+        "api_routes": _json_tool_payload(read_api_routes()),
+        "data_models": _json_tool_payload(read_data_models()),
+        "deployment_config": _json_tool_payload(read_deployment_config()),
+        "existing_tests": existing_tests,
+        "ci_config": _json_tool_payload(read_ci_config()),
+        "candidate_test_commands": _candidate_test_commands(dependencies, existing_tests),
+        "recommended_test_scope": [
+            "单元测试：核心算法、数据转换、工具函数、边界条件。",
+            "接口测试：FastAPI 路由、请求参数、响应结构、异常状态码。",
+            "集成测试：文档生成流程、LLM 工具调用、Markdown/PDF 输出链路。",
+            "前端测试：文档生成页面、状态轮询、下载、中断、追加提示。",
+            "回归测试：表格修复、图表渲染、输出 schema/layout 约束。",
+        ],
+        "risk_areas": [
+            "外部渲染服务或联网搜索失败时的降级行为。",
+            "Markdown 表格列数不一致、单元格未转义竖线导致 PDF 渲染异常。",
+            "长文档生成过程中的中断、终止和追加提示状态一致性。",
+            "上传文件路径和 output_docs 下载路径的安全校验。",
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 # ============================================================
 # 联网搜索
 # ============================================================
@@ -796,17 +1050,25 @@ def _walk(sections: list, path: list, result: list):
 # ============================================================
 # Mermaid 渲染
 # ============================================================
+def _normalize_mermaid_code(code: str) -> str:
+    """对常见 Mermaid 图做可读性修正。具体图型要求来自 output_schema.json。"""
+    lines = code.strip().splitlines()
+    if not lines:
+        return code
+
+    first = lines[0].strip()
+    if first.startswith("stateDiagram") and not any(
+        line.strip().startswith("direction ") for line in lines[1:4]
+    ):
+        lines.insert(1, "    direction TB")
+    return "\n".join(lines)
+
+
 def _render_mermaid_to_file(code: str, file_name: str, fmt: str = "png") -> str:
     """通过 mermaid.ink API 将 Mermaid 代码渲染为图片文件。"""
     import requests
 
-    mermaid_json = json.dumps({"code": code, "mermaid": {"theme": "default"}})
-    encoded = base64.urlsafe_b64encode(mermaid_json.encode()).decode().rstrip("=")
-
-    if fmt == "png":
-        url = f"https://mermaid.ink/img/{encoded}?type=png"
-    else:
-        url = f"https://mermaid.ink/svg/{encoded}"
+    code = _normalize_mermaid_code(code)
 
     # 尝试渲染，失败时自动拆分多图合并的代码块（LLM 有时用 --- 拼接多个图）
     codes_to_try = [code]
@@ -816,9 +1078,14 @@ def _render_mermaid_to_file(code: str, file_name: str, fmt: str = "png") -> str:
 
     last_error = None
     for i, sub_code in enumerate(codes_to_try):
+        sub_code = _normalize_mermaid_code(sub_code)
         sub_mermaid = json.dumps({"code": sub_code, "mermaid": {"theme": "default"}})
         sub_enc = base64.urlsafe_b64encode(sub_mermaid.encode()).decode().rstrip("=")
-        sub_url = f"https://mermaid.ink/img/{sub_enc}?type=png"
+        sub_url = (
+            f"https://mermaid.ink/img/{sub_enc}?type=png"
+            if fmt == "png"
+            else f"https://mermaid.ink/svg/{sub_enc}"
+        )
 
         try:
             resp = requests.get(sub_url, timeout=30)
@@ -934,6 +1201,7 @@ def _layout_css() -> str:
     code_cfg = L["code_blocks"]
     lists_cfg = L["lists"]
     page_breaks = L.get("page_breaks", {})
+    pdf_cfg = L["pdf_rendering"]
 
     bf = font["body_font"]
     bff = font["body_font_fallback"]
@@ -953,7 +1221,7 @@ def _layout_css() -> str:
         sb = L["headings"]["global"]["space_before"]
         sa = L["headings"]["global"]["space_after"]
         heading_css_parts.append(f"""\
-{tag} {{{{
+{tag} {{
     font-family: "{tff}", "{tf}", sans-serif;
     font-size: {fs};
     font-weight: {bold};
@@ -961,7 +1229,7 @@ def _layout_css() -> str:
     margin-top: {sb};
     margin-bottom: {sa};
     text-indent: {ti};
-}}}}""")
+}}""")
 
     heading_css = "\n\n".join(heading_css_parts)
 
@@ -1011,7 +1279,7 @@ p {{
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    min-height: 24cm;
+    min-height: {pdf_cfg['title_page_min_height']};
     text-align: center;
     page-break-after: always;
 }}
@@ -1039,15 +1307,15 @@ p {{
 .doc-meta p {{
     text-align: center;
     text-indent: 0;
-    margin: 0.2em 0;
+    margin: {pdf_cfg['doc_meta_line_margin']};
 }}
 
 {heading_css}
 
 /* ===== 全局图片约束（覆盖所有 img，含 Markdown 裸图）===== */
 img {{
-    max-width: 100%;
-    max-height: 20cm;
+    max-width: {pdf_cfg['image_max_width']};
+    max-height: {pdf_cfg['image_max_height']};
     width: auto;
     height: auto;
     object-fit: contain;
@@ -1061,8 +1329,8 @@ figure, .figure-container {{
 }}
 
 figure img, .figure-container img {{
-    max-width: 100%;
-    max-height: 18cm;
+    max-width: {pdf_cfg['figure_image_max_width']};
+    max-height: {pdf_cfg['figure_image_max_height']};
     height: auto;
 }}
 
@@ -1074,13 +1342,13 @@ figure + p, .figure-container + p {{
 figcaption, .figcaption {{
     font-size: {figs['font_size']};
     text-align: center;
-    margin-top: 0.5em;
+    margin-top: {pdf_cfg['caption_margin_top']};
     text-indent: 0;
 }}
 
 /* ===== 表格 ===== */
 table {{
-    margin: 0.5em auto;
+    margin: {pdf_cfg['table_margin']};
     border-collapse: collapse;
     text-indent: 0;
 }}
@@ -1121,7 +1389,7 @@ code {{
     font-family: "{mf}", "{mff}", monospace;
     font-size: {code_cfg['font_size']};
     background-color: {code_cfg['background_color']};
-    padding: 1px 3px;
+    padding: {pdf_cfg['inline_code_padding']};
 }}
 
 pre code {{
@@ -1131,7 +1399,7 @@ pre code {{
 
 /* ===== 列表 ===== */
 ul, ol {{
-    margin: 0.5em 0;
+    margin: {pdf_cfg['list_margin']};
     padding-left: {lists_cfg['indent']};
     text-indent: {lists_cfg['text_indent']};
 }}
@@ -1144,8 +1412,8 @@ li {{
 /* ===== 分隔线 ===== */
 hr {{
     border: none;
-    border-top: 1px solid #ccc;
-    margin: 1.5em 0;
+    border-top: {pdf_cfg['horizontal_rule_border']};
+    margin: {pdf_cfg['horizontal_rule_margin']};
 }}
 {pb_css}"""
 
@@ -1215,70 +1483,444 @@ def _fix_unordered_lists_in_md(md_text: str) -> str:
     return ''.join(parts)
 
 
+_DETAIL_LABELS = {
+    "描述",
+    "功能描述",
+    "输入",
+    "处理",
+    "处理流程",
+    "输出",
+    "异常处理",
+    "待定原因",
+    "影响评估",
+    "建议处理阶段",
+    "前置条件",
+    "操作步骤",
+    "预期结果",
+    "通过准则",
+    "职责描述",
+    "接口定义",
+    "依赖与其他模块的交互",
+    "测试数据",
+    "优先级",
+    "说明",
+}
+
+
+def _heading_number_from_line(line: str) -> str:
+    match = re.match(r"^#{2,6}\s+(?P<number>\d+(?:\.\d+){1,4})\b", line.strip())
+    return match.group("number") if match else ""
+
+
+def _segments(number: str) -> int:
+    return len(number.split(".")) if number else 0
+
+
+def _current_four_part_parent(parent_numbers: list[str]) -> str:
+    for number in reversed(parent_numbers):
+        if _segments(number) >= 3:
+            return ".".join(number.split(".")[:3])
+    for number in reversed(parent_numbers):
+        if _segments(number) == 2:
+            return f"{number}.1"
+    return ""
+
+
+def _looks_like_detail_line(line: str) -> bool:
+    match = re.match(r"^\s*\(\d+\)\s*([^：:]{1,24})[：:]", line)
+    return bool(match and match.group(1).strip() in _DETAIL_LABELS)
+
+
+def _looks_like_promotable_title(lines: list[str], index: int) -> bool:
+    line = lines[index]
+    if _looks_like_detail_line(line):
+        return False
+    if not re.match(r"^\s*(?:#{5,6}\s*)?\(\d+\)\s+\S+", line):
+        return False
+    for next_line in lines[index + 1:index + 6]:
+        if not next_line.strip():
+            continue
+        if re.match(r"^#{1,6}\s+", next_line):
+            return False
+        return _looks_like_detail_line(next_line)
+    return False
+
+
+def _strip_heading_number(title: str) -> str:
+    title = re.sub(r"^\s*\(?\d+\)?[.、．]?\s*", "", title).strip()
+    title = re.sub(r"^\d+(?:\.\d+){1,4}\s+", "", title).strip()
+    return title
+
+
+def normalize_heading_numbering(md_text: str) -> str:
+    """Promote heading-like numbered list items to four-part Markdown headings."""
+    lines = md_text.splitlines()
+    out: list[str] = []
+    parent_numbers: list[str] = []
+    in_promoted_block = False
+
+    for index, line in enumerate(lines):
+        heading_match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if heading_match:
+            in_promoted_block = False
+            level = min(len(heading_match.group(1)), 6)
+            title = heading_match.group(2).strip()
+            number = _heading_number_from_line(line)
+            if number:
+                parent_numbers = parent_numbers[: max(level - 2, 0)] + [number]
+
+            title_match = re.match(r"^\((\d+)\)\s+(.+)$", title)
+            parent = _current_four_part_parent(parent_numbers)
+            if level >= 5 and title_match and parent:
+                ordinal = title_match.group(1)
+                title_text = _strip_heading_number(title_match.group(2))
+                out.append(f"##### {parent}.{ordinal} {title_text}")
+                in_promoted_block = True
+                continue
+
+            if level > 6:
+                level = 6
+            out.append(f"{'#' * level} {title}")
+            continue
+
+        if _looks_like_promotable_title(lines, index):
+            match = re.match(r"^\s*(?:#{5,6}\s*)?\((\d+)\)\s+(.+?)\s*$", line)
+            parent = _current_four_part_parent(parent_numbers)
+            if match and parent:
+                ordinal = match.group(1)
+                title_text = _strip_heading_number(match.group(2))
+                out.append(f"##### {parent}.{ordinal} {title_text}")
+                in_promoted_block = True
+                continue
+
+        if in_promoted_block:
+            detail_match = re.match(r"^\s*\(\d+\)\s*([^：:]{1,24})[：:]\s*(.*)$", line)
+            if detail_match and detail_match.group(1).strip() in _DETAIL_LABELS:
+                label = detail_match.group(1).strip()
+                value = detail_match.group(2).strip()
+                out.append(f"**{label}**：{value}")
+                continue
+            if re.match(r"^#{1,6}\s+", line):
+                in_promoted_block = False
+
+        out.append(line)
+
+    return "\n".join(out) + ("\n" if md_text.endswith("\n") else "")
+
+
+def _is_table_line(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2
+
+
+def _split_table_row(line: str) -> list[str]:
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+    return [cell.strip() for cell in stripped.split("|")]
+
+
+def _format_table_row(cells: list[str]) -> str:
+    return "| " + " | ".join(cells) + " |"
+
+
+def _is_alignment_cell(cell: str) -> bool:
+    return bool(re.fullmatch(r":?-{3,}:?", cell.strip()))
+
+
+def _table_alignment_marker() -> str:
+    align = json.loads(_OUTPUT_LAYOUT)["tables"]["cell"]["horizontal_alignment"]
+    if align == "right":
+        return "---:"
+    if align == "center":
+        return ":---:"
+    return ":---"
+
+
+def _normalized_table_row(cells: list[str], target_count: int) -> tuple[list[str], bool]:
+    changed = False
+    if len(cells) < target_count:
+        cells = cells + [""] * (target_count - len(cells))
+        changed = True
+    elif len(cells) > target_count:
+        cells = cells[:target_count - 1] + ["；".join(cells[target_count - 1:])]
+        changed = True
+    return cells, changed
+
+
+def _repair_table_block(block: list[str], start_line: int) -> tuple[list[str], list[str]]:
+    issues: list[str] = []
+    rows = [_split_table_row(line) for line in block]
+    if len(rows) < 2:
+        return block, issues
+
+    header = rows[0]
+    separator = rows[1]
+    data_rows = rows[2:]
+    leading_alignment = []
+    for cell in separator:
+        if not _is_alignment_cell(cell):
+            break
+        leading_alignment.append(cell)
+    separator_tail = separator[len(leading_alignment):]
+    data_counts = [len(row) for row in data_rows if row]
+    target_count = max(set(data_counts), key=data_counts.count) if data_counts else len(leading_alignment)
+
+    if leading_alignment and separator_tail and len(header) + len(separator_tail) == len(leading_alignment):
+        header = header + separator_tail
+        separator = leading_alignment
+        target_count = len(separator)
+        issues.append(f"第 {start_line} 行附近表头被拆入对齐行，已合并为标准表头")
+    elif not separator or not all(_is_alignment_cell(cell) for cell in separator):
+        if target_count <= 0:
+            return block, issues
+        separator = [_table_alignment_marker()] * target_count
+        issues.append(f"第 {start_line + 1} 行附近表格对齐行非法，已按布局规范重建")
+    else:
+        target_count = len(separator)
+
+    header, changed = _normalized_table_row(header, target_count)
+    if changed:
+        issues.append(f"第 {start_line} 行附近表头列数与对齐行不一致，已修复")
+
+    marker = _table_alignment_marker()
+    separator = [cell if _is_alignment_cell(cell) else marker for cell in separator]
+    separator, changed = _normalized_table_row(separator, target_count)
+    if changed:
+        separator = [marker] * target_count
+        issues.append(f"第 {start_line + 1} 行附近对齐行列数与表头不一致，已修复")
+    if any(cell != marker for cell in separator):
+        separator = [marker] * target_count
+        issues.append(f"第 {start_line + 1} 行附近表格对齐方式已按布局规范统一为居中")
+
+    fixed_rows = [_format_table_row(header), _format_table_row(separator)]
+    for offset, row in enumerate(data_rows, start=2):
+        fixed_row, changed = _normalized_table_row(row, target_count)
+        if changed:
+            issues.append(f"第 {start_line + offset} 行附近数据行列数不一致，已修复")
+        fixed_rows.append(_format_table_row(fixed_row))
+
+    return fixed_rows, issues
+
+
+def _has_table_caption(lines: list[str], index: int) -> bool:
+    lo = json.loads(_OUTPUT_LAYOUT)
+    prefix = re.escape(lo["tables"]["prefix"])
+    caption_re = re.compile(
+        rf'^\s*(?:\*\*)?\s*{prefix}\s*(?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*\s*[：:].*(?:\*\*)?\s*$'
+    )
+    if index > 0 and caption_re.match(lines[index - 1]):
+        return True
+    if index > 1 and lines[index - 1].strip() == "" and caption_re.match(lines[index - 2]):
+        return True
+    return False
+
+
+def _caption_text_from_heading(line: str) -> str:
+    text = re.sub(r"^#{1,6}\s+", "", line).strip()
+    text = re.sub(r"^(?:[一二三四五六七八九十]+、|\d+(?:\.\d+)*\s+)", "", text).strip()
+    return text
+
+
+def _infer_table_caption_text(lines: list[str], start: int) -> str:
+    for offset in range(start - 1, max(-1, start - 12), -1):
+        text = lines[offset].strip()
+        if not text or _is_table_line(text):
+            continue
+        if re.match(r"^\s*(?:\*\*)?\s*表\s*(?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*\s*[：:]", text):
+            continue
+        if re.match(r"^#{2,6}\s+", text):
+            heading = _caption_text_from_heading(text)
+            return f"{heading}表" if heading and not heading.endswith("表") else heading
+        plain = re.sub(r"[*`_]+", "", text)
+        plain = re.sub(r"^(?:如下|见下表|包括|包含)[：:，,]?\s*", "", plain).strip()
+        if 4 <= len(plain) <= 40 and not plain.endswith(("。", "；", ";")):
+            return f"{plain}表" if not plain.endswith("表") else plain
+    return "相关信息表"
+
+
+def _format_table_caption(caption_num: str, caption_text: str = "相关信息表") -> str:
+    tbls = json.loads(_OUTPUT_LAYOUT)["tables"]
+    parts = caption_num.replace(".", "-").split("-", 1)
+    chapter = parts[0]
+    number = parts[1] if len(parts) > 1 else "1"
+    caption = tbls["caption_format"].format(
+        prefix=tbls["prefix"],
+        chapter=chapter,
+        number=number,
+        caption=caption_text,
+    )
+    return f"**{caption}**"
+
+
 def _validate_table_captions(md_text: str) -> tuple[str, list[str]]:
-    """扫描 Markdown 中每张表格是否前面紧跟粗体表头说明（**表N：...**）。
-    返回 (修正后的文本, 缺失标题的表格位置列表)。
+    """修复 Markdown 表格结构，并补足缺失的表格标题。
+
+    返回 (修正后的文本, 问题列表)。仅处理 fenced code 外部的表格。
     """
     import re as _re
 
-    lines = md_text.split('\n')
     issues = []
-    fixed_lines = []
-    table_counter = 0
-    i = 0
 
-    while i < len(lines):
-        line = lines[i]
+    def _repair_part(part: str, line_offset: int) -> str:
+        lines = part.split('\n')
+        fixed_lines = []
+        i = 0
 
-        # 检测表格行（以 | 开头和结尾，且包含分隔行 |---|）
-        if _re.match(r'^\|.*\|\s*$', line) and i + 1 < len(lines) and _re.match(r'^\|[\s\-:|]+\|\s*$', lines[i + 1]):
-            # 确认这是一个表格
-            table_counter += 1
-            has_caption = False
+        while i < len(lines):
+            line = lines[i]
+            if not _is_table_line(line):
+                fixed_lines.append(line)
+                i += 1
+                continue
 
-            # 检查前一行是否为粗体标题
-            if i > 0:
-                prev = lines[i - 1]
-                if _re.match(r'^\*\*[表图]\s*[A-Z]?\d+(?:[.\-]\d+)*\s*[：:].*\*\*\s*$', prev):
-                    has_caption = True
-                # 也检查空行+标题的情况
-                elif i > 1 and prev.strip() == '' and _re.match(r'^\*\*[表图]\s*[A-Z]?\d+(?:[.\-]\d+)*\s*[：:].*\*\*\s*$', lines[i - 2]):
-                    has_caption = True
+            start = i
+            block = []
+            while i < len(lines) and _is_table_line(lines[i]):
+                block.append(lines[i])
+                i += 1
 
-            if not has_caption:
-                # 查找或生成表号
-                caption_num = _find_next_table_number(md_text, i)
-                caption = f"**表{caption_num}：表格说明**"
-                issues.append(f"第 {i + 1} 行附近的表格缺少标题，已自动补充 {caption}")
+            if len(block) < 2:
+                fixed_lines.extend(block)
+                continue
+
+            if not _has_table_caption(lines, start):
+                caption_num = _find_next_table_number(md_text, line_offset + start)
+                caption_text = _infer_table_caption_text(lines, start)
+                caption = _format_table_caption(caption_num, caption_text)
+                issues.append(f"第 {line_offset + start + 1} 行附近的表格缺少标题，已自动补充 {caption}")
                 fixed_lines.append(caption)
-                fixed_lines.append('')
-                # 在标题前添加空行（如果前面不是空行）
-                if fixed_lines and fixed_lines[-1].strip():
-                    pass  # caption already added above
+                fixed_lines.append("")
 
-            fixed_lines.append(line)
-            i += 1
-        else:
-            fixed_lines.append(line)
-            i += 1
+            repaired, block_issues = _repair_table_block(block, line_offset + start + 1)
+            issues.extend(block_issues)
+            fixed_lines.extend(repaired)
 
-    return '\n'.join(fixed_lines), issues
+        return '\n'.join(fixed_lines)
+
+    parts = _re.split(r'(```.*?```)', md_text, flags=_re.DOTALL)
+    line_offset = 0
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            parts[i] = _repair_part(part, line_offset)
+        line_offset += part.count("\n")
+
+    return ''.join(parts), issues
 
 
 def _find_next_table_number(md_text: str, up_to_line: int) -> str:
     """找出下一个可用的表号。"""
     import re as _re
-    existing = _re.findall(r'\*\*表\s*([A-Z]?\d+(?:[.\-]\d+)*)\s*[：:]', md_text[:sum(len(l) + 1 for l in md_text.split('\n')[:up_to_line])] if up_to_line > 0 else md_text)
+    prefix = _re.escape(json.loads(_OUTPUT_LAYOUT)["tables"]["prefix"])
+    prefix_length = sum(len(line) + 1 for line in md_text.split('\n')[:up_to_line])
+    search_text = md_text[:prefix_length] if up_to_line > 0 else md_text
+    existing = _re.findall(rf'\*\*{prefix}\s*((?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*)\s*[：:]', search_text)
     if existing:
         last = existing[-1]
         # 尝试递增
+        sep = '-' if '-' in last else '.'
         parts = last.replace('-', '.').split('.')
         try:
             parts[-1] = str(int(parts[-1]) + 1)
-            return '.'.join(parts)
+            return sep.join(parts)
         except ValueError:
             return f"{last}-1"
-    return "1"
+    return "1-1"
+
+
+def _document_meta_fields() -> list[dict[str, str]]:
+    fields = json.loads(_OUTPUT_LAYOUT).get("document_meta", {}).get("fields", [])
+    return [field for field in fields if isinstance(field, dict) and field.get("key")]
+
+
+def _document_title_for_type(doc_type: str) -> str:
+    for doc in _OUTPUT_SCHEMA.get("documents", []):
+        if doc.get("doc_type") == doc_type:
+            return str(doc.get("structure", {}).get("title") or doc_type)
+    return doc_type
+
+
+def _default_meta_value(key: str, doc_type: str) -> str:
+    doc_meta = json.loads(_OUTPUT_LAYOUT).get("document_meta", {})
+    if key == "文档编号":
+        document_numbers = doc_meta.get("document_numbers", {})
+        if isinstance(document_numbers, dict) and doc_type in document_numbers:
+            return str(document_numbers[doc_type])
+    defaults = doc_meta.get("defaults", {})
+    if isinstance(defaults, dict) and key in defaults:
+        return str(defaults[key])
+    for field in _document_meta_fields():
+        if field.get("key") == key:
+            return str(field.get("example", ""))
+    return ""
+
+
+def _metadata_line_value(line: str, key: str) -> Optional[str]:
+    import re as _re
+
+    escaped_key = _re.escape(key)
+    patterns = (
+        rf"^\s*\*\*\s*{escaped_key}\s*\*\*\s*[:\uff1a]\s*(?P<value>.*?)\s*$",
+        rf"^\s*\*\*\s*{escaped_key}\s*[:\uff1a]\s*(?P<value>.*?)\s*\*\*\s*$",
+        rf"^\s*{escaped_key}\s*[:\uff1a]\s*(?P<value>.*?)\s*$",
+    )
+    for pattern in patterns:
+        match = _re.match(pattern, line)
+        if match:
+            return match.group("value").strip().strip("*").strip()
+    return None
+
+
+def _is_document_metadata_line(line: str) -> bool:
+    return any(_metadata_line_value(line, field["key"]) is not None for field in _document_meta_fields())
+
+
+def _extract_metadata_values(md_text: str, doc_type: str = "") -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in md_text.splitlines():
+        for field in _document_meta_fields():
+            key = field["key"]
+            value = _metadata_line_value(line, key)
+            if value is None:
+                continue
+            if value and not values.get(key):
+                values[key] = value
+            elif key not in values:
+                values[key] = ""
+
+    return {
+        field["key"]: values.get(field["key"]) or _default_meta_value(field["key"], doc_type)
+        for field in _document_meta_fields()
+    }
+
+
+def _remove_document_metadata_lines(md_text: str) -> str:
+    return "\n".join(line for line in md_text.splitlines() if not _is_document_metadata_line(line))
+
+
+def normalize_document_header(md_text: str, doc_type: str = "") -> str:
+    """Ensure the document has exactly one H1 and one metadata block."""
+    import re as _re
+
+    title = _document_title_for_type(doc_type)
+    metadata = _extract_metadata_values(md_text, doc_type)
+    lines = _remove_document_metadata_lines(md_text).splitlines()
+    body_lines = []
+    first_title = ""
+    for line in lines:
+        match = _re.match(r"^#\s+(.+?)\s*$", line)
+        if match:
+            if not first_title:
+                first_title = match.group(1).strip()
+            continue
+        body_lines.append(line)
+
+    title = title or first_title or doc_type or "文档"
+    meta_lines = [f"**{field['key']}**：{metadata[field['key']]}  " for field in _document_meta_fields()]
+    body = "\n".join(body_lines).strip()
+    return f"# {title}\n\n" + "\n".join(meta_lines) + "\n\n" + body + "\n"
 
 
 def _extract_doc_info(md_text: str) -> dict:
@@ -1296,13 +1938,10 @@ def _extract_doc_info(md_text: str) -> dict:
     if m:
         info["title"] = m.group(1).strip()
 
+    metadata = _extract_metadata_values(md_text)
     for f in meta_fields:
         key = f["key"]
-        m = _re.search(rf"{key}[：:]\s*(.+?)(?:\n|$)", md_text)
-        if m:
-            # 去掉可能残留的 ** 和末尾空白
-            val = m.group(1).strip().strip("*").strip()
-            info[key] = val
+        info[key] = metadata.get(key, "")
 
     return info
 
@@ -1313,7 +1952,9 @@ def _format_title_html(md_body: str, md_text: str, doc_info: dict | None = None)
     lo = json.loads(_OUTPUT_LAYOUT)
     meta_fields = lo.get("document_meta", {}).get("fields", [])
     info = doc_info or _extract_doc_info(md_text)
-    full_title = f"{info['project']}{info['title']}"
+    title = str(info["title"])
+    prefix = str(info["project"])
+    full_title = title if prefix and title.startswith(prefix) else f"{prefix}{title}"
 
     meta_lines = []
     for f in meta_fields:
@@ -1340,9 +1981,15 @@ def _center_captions(html_body: str) -> str:
     Markdown 粗体标题会被转换成 <strong>表1：...</strong>，因此需要按去标签后的文本判断。
     """
     import re as _re
+    lo = json.loads(_OUTPUT_LAYOUT)
+    caption_font_sizes = {
+        lo["figures"]["prefix"]: lo["figures"]["font_size"],
+        lo["tables"]["prefix"]: lo["tables"]["font_size"],
+    }
 
+    prefix_pattern = "|".join(_re.escape(prefix) for prefix in caption_font_sizes)
     caption_pattern = _re.compile(
-        r"^(图|表)\s*(?P<num>[A-Z]?\d*(?:[-.]\d+)?)(?P<sep>[：:]|\s+)(?P<title>.+)$"
+        rf"^({prefix_pattern})\s*(?P<num>(?:[A-Z]?\d+|[A-Z])(?:[-.]\d+)*)(?P<sep>[：:]|\s+)(?P<title>.+)$"
     )
     non_caption_starts = (
         "说明", "展示", "显示", "列出", "列举", "给出", "描述",
@@ -1367,16 +2014,18 @@ def _center_captions(html_body: str) -> str:
         plain_text = html_module.unescape(_re.sub(r"<[^>]+>", "", inner)).strip()
         if not _is_caption(plain_text):
             return match.group(0)
+        prefix = plain_text[:1]
+        font_size = caption_font_sizes.get(prefix, lo["font"]["body_size"])
 
         if "style=" in attrs:
             attrs = _re.sub(
                 r'style=(["\'])(.*?)\1',
-                r'style=\1\2;text-align:center;text-indent:0;font-size:10pt\1',
+                rf'style=\1\2;text-align:center;text-indent:0;font-size:{font_size}\1',
                 attrs,
                 count=1,
             )
             return f"<p{attrs}>{inner}</p>"
-        return f'<p{attrs} style="text-align:center;text-indent:0;font-size:10pt">{inner}</p>'
+        return f'<p{attrs} style="text-align:center;text-indent:0;font-size:{font_size}">{inner}</p>'
 
     return _re.sub(r"<p([^>]*)>(.*?)</p>", _wrap, html_body, flags=_re.DOTALL)
 
@@ -1432,11 +2081,9 @@ def convert_to_pdf(md_path: str) -> str:
     md_text = _clean_boilerplate(md_text)
     # 先从原始 MD 提取元数据（删除前提取，否则 _extract_doc_info 读到空值）
     _doc_info = _extract_doc_info(md_text)
-    # 在 MD 层面移除 H1 后的元数据行，标题页由 _format_title_html 统一生成
-    md_text = _re.sub(
-        r'^(#\s+.+)\n\n((?:\*\*[^*]+：[^*]+\*\*\s*\n)+)',
-        r'\1\n\n', md_text, flags=_re.MULTILINE,
-    )
+    # 在 MD 层面移除所有文档元数据行，标题页由 _format_title_html 统一生成。
+    md_text = _remove_document_metadata_lines(md_text)
+    md_text = normalize_heading_numbering(md_text)
     md_text = _fix_unordered_lists_in_md(md_text)
     md_text = _render_diagram_blocks_for_html(md_text)
     md_text, _table_issues = _validate_table_captions(md_text)
@@ -1482,6 +2129,7 @@ def convert_to_pdf(md_path: str) -> str:
         from playwright.sync_api import sync_playwright
         lo = json.loads(_OUTPUT_LAYOUT)
         ps = lo.get("page_setup", {})
+        pdf_cfg = lo["pdf_rendering"]
 
         with sync_playwright() as p:
             browser = p.chromium.launch()
@@ -1490,17 +2138,17 @@ def convert_to_pdf(md_path: str) -> str:
             page.wait_for_timeout(500)
             page.pdf(
                 path=str(pdf_path),
-                format=ps.get("paper_size", "A4"),
+                format=ps["paper_size"],
                 margin={
-                    "top": ps.get("margin_top", "2.54cm"),
-                    "bottom": ps.get("margin_bottom", "2.54cm"),
-                    "left": ps.get("margin_left", "3.17cm"),
-                    "right": ps.get("margin_right", "3.17cm"),
+                    "top": ps["margin_top"],
+                    "bottom": ps["margin_bottom"],
+                    "left": ps["margin_left"],
+                    "right": ps["margin_right"],
                 },
                 print_background=True,
                 display_header_footer=True,
-                header_template='<span style="font-size:1pt;color:transparent;">&nbsp;</span>',
-                footer_template='<div style="font-size:9pt;text-align:center;width:100%;margin:0;padding:0;">第 <span class="pageNumber"></span> 页</div>',
+                header_template=pdf_cfg["pdf_header_template"],
+                footer_template=pdf_cfg["pdf_footer_template"],
             )
             browser.close()
     except ImportError:

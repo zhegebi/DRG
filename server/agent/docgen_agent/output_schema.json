@@ -43,9 +43,11 @@
         "usage": "架构设计文档 — 用于描述模块内部类结构或领域模型"
       },
       "状态图": {
-        "mermaid_syntax": "stateDiagram-v2",
+        "mermaid_syntax": "stateDiagram-v2 + direction TB",
+        "layout_direction": "TB",
         "description": "描述对象在生命周期内的状态变化及触发条件，展示状态之间的转移关系。",
         "key_elements": ["状态名称", "转移箭头及触发条件", "[*]初始/终止状态", "可选：复合状态(含子状态)"],
+        "readability_rules": ["Mermaid 代码中必须在 stateDiagram-v2 后声明 direction TB", "状态节点较多时拆成主流程图与异常流程图，避免横向长链", "单张状态图优先保留核心生命周期，不在同一图内堆叠多个业务对象"],
         "usage": "需求规格说明书或架构设计文档 — 用于描述订单状态、审批流程等有明确状态机的场景"
       },
       "ER图": {
@@ -281,7 +283,7 @@
                 "required": true,
                 "diagram": true,
                 "diagram_types": ["状态图"],
-                "tips": "必须为至少一个核心业务对象提供状态图(State Diagram)，使用 Mermaid stateDiagram-v2 语法。优先覆盖 DRG 入组流程、文档生成任务、文档提交/版本状态等对象；标注每个状态、触发条件和动作。资料不足时基于需求和项目代码给出合理抽象并说明假设，不要省略图表。",
+                "tips": "必须为至少一个核心业务对象提供状态图(State Diagram)，使用 Mermaid stateDiagram-v2 语法，并在图代码中声明 direction TB。优先覆盖 DRG 入组流程、文档生成任务、文档提交/版本状态等对象；标注每个状态、触发条件和动作。若状态过多，应拆为主流程图和异常流程图，避免生成横向长链。资料不足时基于需求和项目代码给出合理抽象并说明假设，不要省略图表。",
                 "tools": [
                   "render_mermaid"
                 ]
@@ -744,7 +746,7 @@
                 "required": true,
                 "diagram": true,
                 "diagram_types": ["状态图"],
-                "tips": "必须提供缺陷生命周期状态图，使用 Mermaid stateDiagram-v2 语法，覆盖新建、确认、修复、验证、关闭、重新打开等状态，并说明严重等级定义。",
+                "tips": "必须提供缺陷生命周期状态图，使用 Mermaid stateDiagram-v2 语法，并在图代码中声明 direction TB。覆盖新建、确认、修复、验证、关闭、重新打开等状态；若状态过多，应拆为主流程图和回退/重开图，避免生成横向长链。正文中说明严重等级定义。",
                 "tools": [
                   "render_mermaid"
                 ]

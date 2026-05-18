@@ -1,213 +1,209 @@
-# api.py — 前端接口文档
+# docgen_agent API
 
-路由前缀 `/api/agent`，挂载在 `server/main.py`。
+基础前缀：`/api/docgen_agent`
 
-## 端点一览
+该接口由 `server/agent/docgen_agent/api.py` 提供，用于启动文档生成、轮询运行轨迹、追加提示、中断/终止任务，以及下载生成的 Markdown/PDF 文件。
+
+## 文档类型
+
+`doc_type` 仅支持：
+
+- `需求规格说明书`
+- `架构设计文档`
+- `测试文档`
+
+## 接口总览
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/generate-doc` | 同步生成文档 |
-| POST | `/generate-doc/start` | 后台生成 (推荐) |
-| GET | `/runs/{run_id}/trace` | 读取生成过程 |
-| POST | `/runs/{run_id}/interrupt` | 协作式中断 |
-| POST | `/runs/{run_id}/terminate` | 协作式终止 |
-| GET | `/runs/{run_id}/download` | 下载最终 Markdown |
-| GET | `/documents/{file_name}/download` | 按文件名下载 |
-| GET | `/doc-types` | 支持的文档类型 |
+|---|---|---|
+| `POST` | `/generate-doc` | 同步生成文档，完成后返回 Markdown/PDF 路径 |
+| `POST` | `/generate-doc/start` | 后台启动生成任务，立即返回 `run_id` |
+| `GET` | `/runs/{run_id}/trace` | 查询生成轨迹、状态、事件和输出路径 |
+| `POST` | `/runs/{run_id}/hint` | 运行中追加提示词或参考文件 |
+| `POST` | `/runs/{run_id}/interrupt` | 请求中断运行 |
+| `POST` | `/runs/{run_id}/terminate` | 请求终止运行 |
+| `GET` | `/runs/{run_id}/download` | 下载该运行生成的 Markdown |
+| `GET` | `/runs/{run_id}/download/pdf` | 下载该运行生成的 PDF |
+| `GET` | `/documents/{file_name}/download` | 按文件名下载 `output_docs/` 内文件 |
+| `GET` | `/doc-types` | 获取支持的文档类型 |
 
----
+## POST /generate-doc
 
-## POST /generate-doc (同步)
+同步生成文档。接口会阻塞到生成完成、被中断、被终止或失败。
 
-等待生成完成后返回结果。适合调试，不建议前端长时间阻塞。
-
-### 请求 (multipart/form-data)
+请求类型：`multipart/form-data`
 
 | 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `prompt` | string | 否 | 用户提示词，默认空 |
-| `doc_type` | string | 否 | `需求规格说明书` / `架构设计文档` / `测试文档`，默认需求 |
-| `source_file` | file | 否 | 上传 .txt/.md 需求文件，不传则用 requirement.md |
-| `run_id` | string | 否 | 运行 ID，不传则自动生成 |
+|---|---|---|---|
+| `prompt` | string | 否 | 用户补充提示词 |
+| `doc_type` | string | 否 | 文档类型，默认 `需求规格说明书` |
+| `source_file` | file | 否 | 需求源文件，仅支持 `.txt` / `.md` |
+| `run_id` | string | 否 | 自定义运行 ID；不传则后端生成 |
 
-```bash
-curl -X POST http://localhost:8000/api/agent/generate-doc \
-  -F "prompt=请重点关注模块划分" \
-  -F "doc_type=架构设计文档"
-```
-
-### 响应
+响应：
 
 ```json
 {
   "status": "success",
-  "run_id": "a1b2c3...",
-  "file_name": "架构设计文档_20260517_120000.md",
-  "file_path": "server/agent/docgen_agent/output_docs/架构设计文档_20260517_120000.md",
+  "run_id": "a1b2c3",
+  "file_name": "架构设计文档_20260518_120000.md",
+  "file_path": "server/agent/docgen_agent/output_docs/架构设计文档_20260518_120000.md",
+  "pdf_path": "server/agent/docgen_agent/output_docs/架构设计文档_20260518_120000.pdf",
   "doc_type": "架构设计文档"
 }
 ```
 
-错误状态: `"terminated"` (被终止)、`"interrupted"` (被中断)，HTTP 500 为异常。
+`status` 也可能是 `interrupted` 或 `terminated`。
 
----
+## POST /generate-doc/start
 
-## POST /generate-doc/start (后台, 推荐)
+后台启动文档生成，适合前端通过 trace 轮询进度。
 
-立即返回 `run_id`，后端通过 `BackgroundTasks` 异步执行。前端用 trace 接口轮询进度。
+请求字段与 `/generate-doc` 相同。
 
-### 请求
-
-同 `/generate-doc`。
-
-### 响应
+响应：
 
 ```json
 {
   "status": "started",
-  "run_id": "a1b2c3...",
-  "doc_type": "架构设计文档"
+  "run_id": "a1b2c3",
+  "doc_type": "测试文档"
 }
 ```
-
-### 上传需求文件
-
-```bash
-curl -X POST http://localhost:8000/api/agent/generate-doc/start \
-  -F "prompt=请生成测试文档" \
-  -F "doc_type=测试文档" \
-  -F "source_file=@/path/to/requirements.md"
-```
-
-上传文件保存到系统临时目录 `drg_docgen_uploads/`，仅允许 `.txt` / `.md`。
-
----
 
 ## GET /runs/{run_id}/trace
 
-轮询生成过程，前端可增量渲染思考、工具调用和阶段进度。
+查询运行状态和事件流。
 
-### 响应
+响应：
 
 ```json
 {
-  "run_id": "a1b2c3...",
+  "run_id": "a1b2c3",
   "status": "running",
-  "doc_type": "需求规格说明书",
-  "created_at": "2026-05-17T12:00:00",
-  "updated_at": "2026-05-17T12:25:00",
+  "doc_type": "架构设计文档",
+  "created_at": "2026-05-18T12:00:00",
+  "updated_at": "2026-05-18T12:05:00",
   "output_path": null,
+  "pdf_path": null,
   "error": null,
   "interrupted": false,
   "terminated": false,
-  "events": [
-    {
-      "id": 1,
-      "time": "2026-05-17T12:00:01",
-      "type": "phase_started",
-      "phase": "read_files",
-      "message": "读取需求、结构和排版规范"
-    },
-    {
-      "id": 2,
-      "time": "2026-05-17T12:00:05",
-      "type": "tool_call",
-      "phase": "read_files",
-      "name": "read_requirement",
-      "arguments": {}
-    }
-  ]
+  "events": []
 }
 ```
 
-### status 枚举
+状态值：
 
-| 值 | 说明 |
-|-----|------|
-| `running` | 生成中 |
-| `completed` | 成功，`output_path` 有值 |
-| `failed` | 异常，`error` 有值 |
-| `interrupt_requested` / `interrupted` | 中断 |
-| `terminate_requested` / `terminated` | 终止 |
+| 状态 | 说明 |
+|---|---|
+| `running` | 正在生成 |
+| `completed` | 已完成，`output_path` 为 Markdown，`pdf_path` 为 PDF |
+| `failed` | 失败，查看 `error` |
+| `interrupt_requested` / `interrupted` | 已请求/已完成中断 |
+| `terminate_requested` / `terminated` | 已请求/已完成终止 |
 
-### events[].type 枚举
+常见事件类型：`run_started`、`phase_started`、`phase_completed`、`llm_request`、`reasoning`、`tool_call`、`tool_result`、`section_started`、`section_completed`、`error`。
 
-| 类型 | 说明 |
-|------|------|
-| `run_started` | 开始 |
-| `phase_started` / `phase_completed` | 阶段边界 |
-| `llm_request` | LLM 调用 |
-| `reasoning` | 思考过程 |
-| `tool_calls_planned` | 计划调用的工具 |
-| `tool_call` / `tool_result` | 工具调用和结果 |
-| `section_started` / `section_completed` | 章节边界 |
-| `error` | 错误 |
+## POST /runs/{run_id}/hint
 
-每个 event 最大存储 1000 条，超出则从头部删除。文本值截断到 4000 字符。
+向运行中的任务追加提示。下一轮 LLM 调用会把该提示作为用户消息注入。
 
----
+请求类型：`multipart/form-data`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `hint` | string | 是 | 追加提示词或指导内容 |
+| `source_file` | file | 否 | 追加参考文件，仅支持 `.txt` / `.md` |
+
+响应：
+
+```json
+{
+  "status": "hint_appended",
+  "run_id": "a1b2c3"
+}
+```
 
 ## POST /runs/{run_id}/interrupt
 
-协作式中断——不会强杀已发出的 LLM 请求，但在下次模型返回、工具调用前或章节切换时尽快停止。
+请求协作式中断。任务会在下一次工具调用或模型调用边界停止。
 
-```bash
-curl -X POST http://localhost:8000/api/agent/runs/a1b2c3.../interrupt
-```
+响应：
 
 ```json
-{"status": "interrupt_requested", "run_id": "a1b2c3..."}
+{
+  "status": "interrupt_requested",
+  "run_id": "a1b2c3"
+}
 ```
-
----
 
 ## POST /runs/{run_id}/terminate
 
-协作式终止，与 interrupt 机制相同，但标记为 `terminate_requested`/`terminated`。
+请求协作式终止。语义上比 interrupt 更明确地表示放弃本次生成。
 
----
+响应：
+
+```json
+{
+  "status": "terminate_requested",
+  "run_id": "a1b2c3"
+}
+```
 
 ## GET /runs/{run_id}/download
 
-下载最终生成的 Markdown 文件。
+下载该运行生成的 Markdown 文件。
 
-```bash
-curl -L -o result.md http://localhost:8000/api/agent/runs/a1b2c3.../download
-```
+响应头：
 
-响应: `Content-Type: text/markdown; charset=utf-8`，`Content-Disposition: attachment`。
+- `Content-Type: text/markdown; charset=utf-8`
+- `Content-Disposition: attachment`
 
-限制: 仅允许下载 `output_docs/` 内的文件（`_safe_output_path` 校验）。
+## GET /runs/{run_id}/download/pdf
 
----
+下载该运行生成的 PDF 文件。
+
+响应头：
+
+- `Content-Type: application/pdf`
+- `Content-Disposition: attachment`
 
 ## GET /documents/{file_name}/download
 
-按文件名下载 `output_docs/` 中的任意文档。
-
-```bash
-curl -L -o result.md "http://localhost:8000/api/agent/documents/架构设计文档_20260516_153000.md/download"
-```
-
----
+按文件名下载 `server/agent/docgen_agent/output_docs/` 内的文件。后端会剥离路径，仅使用文件名，并校验最终路径必须位于 `output_docs/` 内。
 
 ## GET /doc-types
 
-```bash
-curl http://localhost:8000/api/agent/doc-types
-```
+响应：
 
 ```json
 ["需求规格说明书", "架构设计文档", "测试文档"]
 ```
 
----
+## 错误码
 
-## 安全措施
+| 状态码 | 场景 |
+|---|---|
+| `400` | 上传文件类型不支持，或下载路径不在 `output_docs/` 内 |
+| `404` | `run_id` 不存在，文件不存在，或 PDF 尚未生成 |
+| `409` | 文档尚未生成完成，暂不能下载 |
+| `500` | 文档生成或底层工具执行失败 |
 
-| 措施 | 位置 |
-|------|------|
-| 上传文件扩展名白名单 (`.txt` / `.md`) | `_save_uploaded_source_file()` |
-| 下载路径限制在 `output_docs/` 内 | `_safe_output_path()` |
-| 运行 ID 可手动指定或自动生成 (uuid4) | `run_id` 参数 |
-| 中断/终止是协作式 (非暴力 kill) | `_check_interrupted()` |
+## curl 示例
+
+```bash
+curl -X POST http://localhost:8000/api/docgen_agent/generate-doc/start \
+  -F "prompt=请结合当前代码生成测试文档" \
+  -F "doc_type=测试文档" \
+  -F "source_file=@requirements.md"
+```
+
+```bash
+curl http://localhost:8000/api/docgen_agent/runs/a1b2c3/trace
+```
+
+```bash
+curl -L -o result.md http://localhost:8000/api/docgen_agent/runs/a1b2c3/download
+curl -L -o result.pdf http://localhost:8000/api/docgen_agent/runs/a1b2c3/download/pdf
+```
