@@ -19,7 +19,7 @@ export default defineConfig({
     port: 5173,          // 前端默认端口
     proxy: {
       '/api': {          // 前端发往 /api 的请求都会被代理
-        target: 'http://127.0.0.1:8000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
         ws: true,
       }
