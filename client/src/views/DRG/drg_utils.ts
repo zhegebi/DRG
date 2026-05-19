@@ -1,5 +1,6 @@
 import {
     createTaskApiDrgTaskCreatePost,
+    deleteTaskApiDrgTaskTaskIdDelete,
     getTaskListApiDrgTaskListGet,
     getTaskStatusApiDrgTaskStatusGet,
     getTaskResultApiDrgTaskResultTaskIdGet,
@@ -9,6 +10,18 @@ import {
 import type { TaskStep } from "@/api";
 import { useAuthStore } from "@/stores/auth";
 
+
+export const deleteTask = async (task_id: string): Promise<boolean> => {
+    const { data: deleted, error } = await deleteTaskApiDrgTaskTaskIdDelete({
+        path: {
+            task_id,
+        },
+    })
+    if (error) {
+        throw error
+    }
+    return deleted
+}
 
 export const createTask = async (user_input: string, should_generate_test: boolean) => {
     const { data: task_id, error } = await createTaskApiDrgTaskCreatePost({

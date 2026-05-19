@@ -1,29 +1,56 @@
 <template>
   <div class="drg-agent-layout">
     <div class="task-sidebar">
-      <button class="new-task-button" type="button" @click="openNewTask">
-        <SvgIcon type="mdi" :path="mdiPlus" class="button-icon" />
-        <span>新建任务</span>
-      </button>
+      <div class="sidebar-actions">
+        <button class="new-task-button" type="button" @click="openNewTask">
+          <SvgIcon type="mdi" :path="mdiPlus" class="button-icon" />
+          <span>新建任务</span>
+        </button>
+        <button
+          class="edit-toggle-btn"
+          type="button"
+          :class="{ active: isEditing }"
+          @click="isEditing = !isEditing"
+        >
+          <SvgIcon type="mdi" :path="mdiPencil" class="button-icon" />
+        </button>
+      </div>
 
       <div class="task-list">
-        <button
+        <div
           v-for="task in taskList"
           :key="task.task_id"
-          class="task-card"
-          :class="{ active: selectedTaskId === task.task_id }"
-          type="button"
-          @click="selectTask(task.task_id)"
+          class="task-card-row"
         >
-          <span class="task-name">{{ task.task_name }}</span>
-          <SvgIcon
-            type="mdi"
-            :path="statusIconMap[task.task_status]"
-            class="task-status-icon"
-            :class="`status-${task.task_status}`"
-            :title="statusLabelMap[task.task_status]"
-          />
-        </button>
+          <button
+            class="task-card"
+            :class="{ active: selectedTaskId === task.task_id }"
+            type="button"
+            @click="selectTask(task.task_id)"
+          >
+            <span class="task-name">{{ task.task_name }}</span>
+            <SvgIcon
+              type="mdi"
+              :path="statusIconMap[task.task_status]"
+              class="task-status-icon"
+              :class="`status-${task.task_status}`"
+              :title="statusLabelMap[task.task_status]"
+            />
+          </button>
+          <button
+            v-if="isEditing"
+            class="task-delete-btn"
+            type="button"
+            title="删除任务"
+            @click.stop="handleDeleteTask(task)"
+          >
+            <SvgIcon
+              type="mdi"
+              :path="mdiDelete"
+              class="task-delete-icon"
+            />
+          </button>
+        </div>
       </div>
     </div>
 
@@ -174,7 +201,9 @@ import {
   mdiCheckCircleOutline,
   mdiClockOutline,
   mdiCloseCircle,
+  mdiDelete,
   mdiFileUpload,
+  mdiPencil,
   mdiPlus,
   mdiProgressClock,
   mdiSend,
@@ -182,6 +211,7 @@ import {
 import DropDownMenu from '@/components/DropDownMenu.vue'
 import {
   createTask,
+  deleteTask,
   getTaskList,
   getTaskStatus,
   getTaskResultStream,
@@ -240,6 +270,7 @@ const stepStates = ref<Record<string, { lines: string[] }>>({})
 const viewMode = ref<'progress' | 'result'>('progress')
 const resultContent = ref('')
 const isLoadingResult = ref(false)
+const isEditing = ref(false)
 
 let progressTimer: ReturnType<typeof setInterval> | null = null
 let statusTimer: ReturnType<typeof setInterval> | null = null
@@ -502,6 +533,24 @@ const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
 }
 
+const handleDeleteTask = async (task: TaskItem) => {
+  if (!confirm(`确定要删除任务「${task.task_name}」吗？此操作不可撤销。`)) return
+
+  try {
+    const deleted = await deleteTask(task.task_id)
+    if (deleted) {
+      if (selectedTaskId.value === task.task_id) {
+        selectedTaskId.value = null
+      }
+      taskList.value = taskList.value.filter((t) => t.task_id !== task.task_id)
+    } else {
+      alert('任务正在运行中，请待任务完成后再删除。')
+    }
+  } catch (e) {
+    console.error('删除任务失败:', e)
+  }
+}
+
 const switchAgent = (type: AgentType) => {
   if (agentType.value === type) return
   agentType.value = type
@@ -579,16 +628,16 @@ onUnmounted(() => {
   height: calc(100vh - $control-bar-height);
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  background: #f8fafc;
-  color: #1e293b;
+  background: $bg-page;
+  color: $text-body;
   overflow: hidden;
 }
 
 .task-sidebar {
   padding: 16px;
   box-sizing: border-box;
-  border-right: 1px solid rgba(0, 127, 212, 0.12);
-  background: #ffffff;
+  border-right: 1px solid rgba($primary, 0.12);
+  background: $bg-white;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -596,12 +645,18 @@ onUnmounted(() => {
   min-height: 0;
 }
 
+.sidebar-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .new-task-button {
+  flex: 1;
   height: 44px;
   border: none;
   border-radius: 8px;
-  background: #007fd4;
-  color: #ffffff;
+  background: $primary;
+  color: $bg-white;
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
@@ -609,6 +664,31 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+
+.edit-toggle-btn {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid rgba($dark, 0.12);
+  border-radius: 8px;
+  background: $bg-white;
+  color: $text-muted;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: $bg-page;
+    color: $text-body;
+  }
+
+  &.active {
+    background: $primary;
+    color: $bg-white;
+    border-color: $primary;
+  }
 }
 
 .button-icon {
@@ -623,17 +703,24 @@ onUnmounted(() => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.task-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .task-card {
-  width: 100%;
-  min-height: 58px;
-  padding: 10px 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid rgba($dark, 0.08);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1e293b;
+  background: $bg-white;
+  color: $text-body;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -642,14 +729,23 @@ onUnmounted(() => {
   text-align: left;
 }
 
-.task-card:hover {
-  border-color: rgba(0, 127, 212, 0.28);
-  background: #f8fbff;
+.task-card-row:hover .task-card {
+  border-color: rgba($primary, 0.28);
+  background: $bg-hover;
+}
+
+.task-card-row:hover .task-card.active {
+  border-color: rgba($primary, 0.62);
+  background: $bg-active-hover;
+}
+
+.task-card-row:hover .task-delete-btn {
+  color: $text-muted;
 }
 
 .task-card.active {
-  border-color: rgba(0, 127, 212, 0.56);
-  background: #eef8ff;
+  border-color: rgba($primary, 0.56);
+  background: $bg-active;
 }
 
 .task-name {
@@ -667,20 +763,46 @@ onUnmounted(() => {
   fill: currentColor;
 }
 
+.task-delete-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: $icon-muted;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+
+  &:hover {
+    background: rgba($danger, 0.08);
+    color: $danger;
+  }
+}
+
+.task-delete-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
 .status-pending {
-  color: #64748b;
+  color: $text-muted;
 }
 
 .status-running {
-  color: #007fd4;
+  color: $primary;
 }
 
 .status-success {
-  color: #16a34a;
+  color: $success;
 }
 
 .status-failed {
-  color: #dc2626;
+  color: $danger;
 }
 
 .agent-main {
@@ -705,7 +827,7 @@ onUnmounted(() => {
 
 .agent-title {
   margin: 0;
-  color: #007fd4;
+  color: $primary;
   font-size: 52px;
   line-height: 1.1;
   font-weight: 800;
@@ -721,9 +843,9 @@ onUnmounted(() => {
 
 .agent-tab {
   padding: 8px 24px;
-  border: 1px solid rgba(0, 127, 212, 0.2);
-  background: #ffffff;
-  color: #475569;
+  border: 1px solid rgba($primary, 0.2);
+  background: $bg-white;
+  color: $text-content;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -738,13 +860,13 @@ onUnmounted(() => {
   }
 
   &:hover {
-    background: rgba(0, 127, 212, 0.06);
+    background: rgba($primary, 0.06);
   }
 
   &.active {
-    background: #007fd4;
-    color: #ffffff;
-    border-color: #007fd4;
+    background: $primary;
+    color: $bg-white;
+    border-color: $primary;
   }
 }
 
@@ -752,10 +874,10 @@ onUnmounted(() => {
   width: min(920px, 100%);
   margin: 0 auto;
   padding: 10px;
-  border: 1px solid rgba(0, 127, 212, 0.14);
+  border: 1px solid rgba($primary, 0.14);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  background: $bg-white;
+  box-shadow: 0 8px 24px rgba($dark, 0.08);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -764,10 +886,10 @@ onUnmounted(() => {
 .file-upload-btn {
   height: 32px;
   padding: 0 12px;
-  border: 1px dashed rgba(0, 127, 212, 0.35);
+  border: 1px dashed rgba($primary, 0.35);
   border-radius: 8px;
-  background: #ffffff;
-  color: #007fd4;
+  background: $bg-white;
+  color: $primary;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -778,8 +900,8 @@ onUnmounted(() => {
   position: relative;
 
   &:hover {
-    background: rgba(0, 127, 212, 0.06);
-    border-color: rgba(0, 127, 212, 0.55);
+    background: rgba($primary, 0.06);
+    border-color: rgba($primary, 0.55);
   }
 }
 
@@ -808,11 +930,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 4px 6px 4px 10px;
-  border: 1px solid rgba(0, 127, 212, 0.22);
+  border: 1px solid rgba($primary, 0.22);
   border-radius: 6px;
-  background: rgba(0, 127, 212, 0.05);
+  background: rgba($primary, 0.05);
   font-size: 13px;
-  color: #1e293b;
+  color: $text-body;
 }
 
 .file-card-name {
@@ -828,7 +950,7 @@ onUnmounted(() => {
   padding: 0;
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: $icon-muted;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -836,7 +958,7 @@ onUnmounted(() => {
   flex: 0 0 auto;
 
   &:hover {
-    color: #dc2626;
+    color: $danger;
   }
 }
 
@@ -850,16 +972,16 @@ onUnmounted(() => {
   flex: 1;
   resize: none;
   padding: 10px 12px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  border: 1px solid rgba($dark, 0.1);
   border-radius: 8px;
-  color: #1e293b;
+  color: $text-body;
   font-size: 14px;
   line-height: 20px;
   outline: none;
 }
 
 .task-input:focus {
-  border-color: rgba(0, 127, 212, 0.5);
+  border-color: rgba($primary, 0.5);
 }
 
 .submit-button {
@@ -868,8 +990,8 @@ onUnmounted(() => {
   flex: 0 0 auto;
   border: none;
   border-radius: 8px;
-  background: #007fd4;
-  color: #ffffff;
+  background: $primary;
+  color: $bg-white;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -904,13 +1026,13 @@ onUnmounted(() => {
 
 .task-detail-label {
   margin: 0 0 4px;
-  color: #64748b;
+  color: $text-muted;
   font-size: 13px;
 }
 
 .task-detail-title {
   margin: 0;
-  color: #0f172a;
+  color: $text-title;
   font-size: 24px;
   line-height: 1.25;
 }
@@ -918,8 +1040,8 @@ onUnmounted(() => {
 .task-detail-status {
   padding: 6px 10px;
   border-radius: 8px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: $bg-white;
+  border: 1px solid rgba($dark, 0.08);
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
@@ -929,15 +1051,15 @@ onUnmounted(() => {
   width: 100%;
   min-height: 200px;
   padding: 20px 24px;
-  border: 1px solid rgba(0, 127, 212, 0.12);
+  border: 1px solid rgba($primary, 0.12);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  background: $bg-white;
+  box-shadow: 0 8px 24px rgba($dark, 0.08);
   font-size: 14px;
   line-height: 1.8;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 127, 212, 0.35) transparent;
+  scrollbar-color: rgba($primary, 0.35) transparent;
 }
 
 .result-panel::-webkit-scrollbar {
@@ -945,7 +1067,7 @@ onUnmounted(() => {
 }
 
 .result-panel::-webkit-scrollbar-thumb {
-  background: rgba(0, 127, 212, 0.35);
+  background: rgba($primary, 0.35);
   border-radius: 999px;
 }
 
@@ -955,7 +1077,7 @@ onUnmounted(() => {
 
 .result-loading,
 .result-empty {
-  color: #64748b;
+  color: $text-muted;
   font-size: 14px;
 }
 
@@ -963,19 +1085,19 @@ onUnmounted(() => {
   :deep(h1) {
     margin: 16px 0 8px;
     font-size: 20px;
-    color: #0f172a;
+    color: $text-title;
   }
 
   :deep(h2) {
     margin: 14px 0 6px;
     font-size: 17px;
-    color: #0f172a;
+    color: $text-title;
   }
 
   :deep(h3) {
     margin: 12px 0 4px;
     font-size: 15px;
-    color: #1e293b;
+    color: $text-body;
   }
 
   :deep(p) {
@@ -985,7 +1107,7 @@ onUnmounted(() => {
 
   :deep(strong) {
     font-weight: 700;
-    color: #0f172a;
+    color: $text-title;
   }
 
   :deep(ul),
@@ -1006,7 +1128,7 @@ onUnmounted(() => {
 
   .task-sidebar {
     border-right: none;
-    border-bottom: 1px solid rgba(0, 127, 212, 0.12);
+    border-bottom: 1px solid rgba($primary, 0.12);
   }
 
   .task-list {

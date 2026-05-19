@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
-from sqlmodel import select
+from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from server.db.utils import get_async_session
@@ -61,7 +61,7 @@ async def create_task(
             truncated = first_line[:20].rstrip()
             break_chars = "，。；：,. ;:!?、"
             last_break = max((truncated.rfind(c) for c in break_chars), default=-1)
-            task_name = truncated[:last_break + 1] if last_break > 0 else truncated
+            task_name = truncated[: last_break + 1] if last_break > 0 else truncated
         assert current_user.id is not None, "current_user.id is None"
         task_obj = Task(
             id=task_id,
@@ -475,4 +475,33 @@ async def get_task_progress(
         raise
     except Exception as e:
         logger.exception(f"Error getting task progress: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.delete("/task/{task_id}")
+async def delete_task(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> bool:
+    """
+    Delete a task.
+    if the task has been completed, it will be deleted.
+    if the task is running, it willnot be deleted.
+    Returns True if the task is deleted, False otherwise.
+    """
+    try:
+        flag = Task.TASK_LOG_MAP.get(task_id, None)
+        # flag being None means the task has been completed
+        if flag is not None:
+            return False
+        else:
+            await db_client.exec(delete(DrgTask).where(DrgTask.task_id == task_id))  # type: ignore
+            await db_client.commit()
+            return True
+    except HTTPException:
+        await db_client.rollback()
+        raise
+    except Exception as e:
+        await db_client.rollback()
+        logger.exception(f"Error deleting task: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

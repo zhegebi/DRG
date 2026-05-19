@@ -142,20 +142,22 @@ watch(
 </script>
 
 <style lang="scss" scoped>
+@use "@/common/global.scss" as *;
+
 .dropdown-menu {
   width: 100%;
   max-width: 960px;
-  color: #1e293b;
+  color: $text-body;
 }
 
 .dropdown-trigger {
   width: 100%;
   min-height: 44px;
   padding: 8px 16px;
-  border: 1px solid rgba(0, 127, 212, 0.16);
+  border: 1px solid rgba($primary, 0.16);
   border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, $bg-white 0%, $bg-hover 100%);
+  box-shadow: 0 1px 4px rgba($dark, 0.06);
   color: inherit;
   cursor: pointer;
   display: flex;
@@ -166,7 +168,7 @@ watch(
 }
 
 .dropdown-trigger:focus-visible {
-  outline: 3px solid rgba(0, 127, 212, 0.18);
+  outline: 3px solid rgba($primary, 0.18);
   outline-offset: 3px;
 }
 
@@ -181,7 +183,7 @@ watch(
   font-size: 16px;
   font-weight: 700;
   line-height: 1.35;
-  color: #0f172a;
+  color: $text-title;
 }
 
 .trigger-actions {
@@ -199,33 +201,33 @@ watch(
 }
 
 .trigger-status-icon--pending {
-  color: #64748b;
+  color: $text-muted;
 }
 
 .trigger-status-icon--running {
-  color: #007fd4;
+  color: $primary;
 }
 
 .trigger-status-icon--success {
-  color: #16a34a;
+  color: $success;
 }
 
 .trigger-status-icon--failed {
-  color: #dc2626;
+  color: $danger;
 }
 
 .trigger-arrow {
   width: 11px;
   height: 11px;
   flex: 0 0 auto;
-  border-right: 2px solid #007fd4;
-  border-bottom: 2px solid #007fd4;
+  border-right: 2px solid $primary;
+  border-bottom: 2px solid $primary;
   transform: rotate(45deg);
 }
 
 .dropdown-menu.is-open > .dropdown-trigger {
-  border-color: rgba(0, 127, 212, 0.45);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+  border-color: rgba($primary, 0.45);
+  box-shadow: 0 4px 14px rgba($dark, 0.08);
 }
 
 .dropdown-menu.is-open > .dropdown-trigger .trigger-arrow {
@@ -236,20 +238,20 @@ watch(
   margin-top: 5px;
   height: 100px;
   padding: 5px 15px;
-  border: 1px solid rgba(0, 127, 212, 0.12);
+  border: 1px solid rgba($primary, 0.12);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  background: $bg-white;
+  box-shadow: 0 8px 24px rgba($dark, 0.08);
   font-size: 14px;
   line-height: 1.8;
-  color: #475569;
+  color: $text-content;
   overflow-y: auto;
   overflow-x: hidden;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 127, 212, 0.35) transparent;
+  scrollbar-color: rgba($primary, 0.35) transparent;
 }
 
 .dropdown-content--menu {
@@ -276,11 +278,11 @@ watch(
 }
 
 .dropdown-content--menu :deep(.dropdown-trigger:hover) {
-  background: rgba(0, 127, 212, 0.05);
+  background: rgba($primary, 0.05);
 }
 
 .dropdown-content--menu :deep(.dropdown-menu.is-open > .dropdown-trigger) {
-  background: rgba(0, 127, 212, 0.06);
+  background: rgba($primary, 0.06);
   box-shadow: none;
 }
 
@@ -310,7 +312,7 @@ watch(
 }
 
 .dropdown-content::-webkit-scrollbar-thumb {
-  background: rgba(0, 127, 212, 0.35);
+  background: rgba($primary, 0.35);
   border-radius: 999px;
 }
 

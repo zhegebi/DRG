@@ -954,6 +954,38 @@ export type GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses = {
 
 export type GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponse = GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses[keyof GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses];
 
+export type DeleteTaskApiDrgTaskTaskIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/drg/task/{task_id}';
+};
+
+export type DeleteTaskApiDrgTaskTaskIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteTaskApiDrgTaskTaskIdDeleteError = DeleteTaskApiDrgTaskTaskIdDeleteErrors[keyof DeleteTaskApiDrgTaskTaskIdDeleteErrors];
+
+export type DeleteTaskApiDrgTaskTaskIdDeleteResponses = {
+    /**
+     * Response Delete Task Api Drg Task  Task Id  Delete
+     *
+     * Successful Response
+     */
+    200: boolean;
+};
+
+export type DeleteTaskApiDrgTaskTaskIdDeleteResponse = DeleteTaskApiDrgTaskTaskIdDeleteResponses[keyof DeleteTaskApiDrgTaskTaskIdDeleteResponses];
+
 export type RootGetData = {
     body?: never;
     path?: never;
