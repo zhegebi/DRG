@@ -69,4 +69,4 @@ alias g := gen
 
 # run drg_agent for tests
 run_drg_agent:
-    uv run -m server.agent.drg_agent
+    uv run -m server.drg_agent

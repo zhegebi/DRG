@@ -33,22 +33,56 @@
           <div class="agent-title">DRG智能体</div>
         </div>
 
+        <div class="agent-tabs">
+          <button
+            class="agent-tab"
+            :class="{ active: agentType === 'notest' }"
+            @click="switchAgent('notest')"
+          >
+            DRG入组
+          </button>
+          <button
+            class="agent-tab"
+            :class="{ active: agentType === 'test' }"
+            @click="switchAgent('test')"
+          >
+            测试用例生成
+          </button>
+        </div>
+
         <div class="task-composer">
-          <div class="testcase-option" @click="toggleGenerateTestCase">
-            <input v-model="shouldGenerateTestCase" type="checkbox" @click.stop />
-            <span>生成测试用例</span>
+          <div v-if="fileList.length > 0" class="file-cards">
+            <div v-for="(file, index) in fileList" :key="index" class="file-card">
+              <span class="file-card-name">{{ file.name }}</span>
+              <button class="file-card-remove" @click="removeFile(index)">
+                <SvgIcon type="mdi" :path="mdiCloseCircle" class="file-card-remove-icon" />
+              </button>
+            </div>
           </div>
 
-          <textarea
-            v-model="taskInput"
-            class="task-input"
-            rows="1"
-            :placeholder="taskInputPlaceholder"
-          ></textarea>
+          <label v-if="agentType === 'notest'" class="file-upload-btn" title="上传电子病历文件">
+            <SvgIcon type="mdi" :path="mdiFileUpload" class="button-icon" />
+            <span>上传病历文件</span>
+            <input
+              type="file"
+              accept=".txt,.md,.pdf"
+              class="file-input-hidden"
+              @change="handleFileUpload"
+            />
+          </label>
 
-          <button class="submit-button" type="button" aria-label="提交任务" @click="submitNewTask">
-            <SvgIcon type="mdi" :path="mdiSend" class="button-icon" />
-          </button>
+          <div class="task-input-row">
+            <textarea
+              v-model="taskInput"
+              class="task-input"
+              rows="1"
+              :placeholder="taskInputPlaceholder"
+            ></textarea>
+
+            <button class="submit-button" type="button" aria-label="提交任务" @click="submitNewTask">
+              <SvgIcon type="mdi" :path="mdiSend" class="button-icon" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -139,6 +173,8 @@ import {
   mdiAlertCircleOutline,
   mdiCheckCircleOutline,
   mdiClockOutline,
+  mdiCloseCircle,
+  mdiFileUpload,
   mdiPlus,
   mdiProgressClock,
   mdiSend,
@@ -154,6 +190,9 @@ import {
 } from '@/views/DRG/drg_utils'
 import type { TaskStep } from '@/api'
 import { marked } from 'marked'
+import * as pdfjsLib from 'pdfjs-dist'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
 
 type TaskStatus = 'pending' | 'running' | 'success' | 'failed'
 
@@ -185,10 +224,18 @@ const drgGroupingSteps: TaskStep[] = [
   'get_final_result',
 ]
 
+type AgentType = 'notest' | 'test'
+
+const agentType = ref<AgentType>('notest')
 const taskList = ref<TaskItem[]>([])
 const selectedTaskId = ref<string | null>(null)
+interface FileItem {
+  name: string
+  content: string
+}
+
 const taskInput = ref('')
-const shouldGenerateTestCase = ref(false)
+const fileList = ref<FileItem[]>([])
 const stepStates = ref<Record<string, { lines: string[] }>>({})
 const viewMode = ref<'progress' | 'result'>('progress')
 const resultContent = ref('')
@@ -215,7 +262,7 @@ const selectedTask = computed(() => {
 })
 
 const taskInputPlaceholder = computed(() => {
-  return shouldGenerateTestCase.value ? '请输入您想要的测试用例类型' : '请输入电子病历'
+  return agentType.value === 'test' ? '请输入您想要的测试用例类型' : '请输入电子病历'
 })
 
 const renderedResult = computed(() => {
@@ -455,20 +502,58 @@ const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
 }
 
-const toggleGenerateTestCase = () => {
-  shouldGenerateTestCase.value = !shouldGenerateTestCase.value
+const switchAgent = (type: AgentType) => {
+  if (agentType.value === type) return
+  agentType.value = type
+  selectedTaskId.value = null
+  taskInput.value = ''
+  fileList.value = []
+  fetchTaskList()
+}
+
+const removeFile = (index: number) => {
+  fileList.value.splice(index, 1)
+}
+
+const handleFileUpload = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (file.name.endsWith('.pdf')) {
+    const arrayBuffer = await file.arrayBuffer()
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    let text = ''
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const pageText = content.items.map((item: any) => item.str).join(' ')
+      text += pageText + '\n'
+    }
+    fileList.value.push({ name: file.name, content: text.trim() })
+  } else {
+    const text = await file.text()
+    fileList.value.push({ name: file.name, content: text })
+  }
+
+  input.value = ''
 }
 
 const submitNewTask = async () => {
   const input = taskInput.value.trim()
-  if (!input) return
+  const fileContents = fileList.value.map((f) => f.content).join('\n')
+  const parts: string[] = []
+  if (input) parts.push(input)
+  if (fileContents) parts.push(fileContents)
+  const userInput = parts.join('\n')
+  if (!userInput) return
 
   try {
-    const taskId = await createTask(input, shouldGenerateTestCase.value)
+    const taskId = await createTask(userInput, agentType.value === 'test')
     await fetchTaskList()
     selectedTaskId.value = taskId
     taskInput.value = ''
-    shouldGenerateTestCase.value = false
+    fileList.value = []
   } catch (e) {
     console.error('创建任务失败:', e)
   }
@@ -627,6 +712,42 @@ onUnmounted(() => {
   letter-spacing: 0;
 }
 
+.agent-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.agent-tab {
+  padding: 8px 24px;
+  border: 1px solid rgba(0, 127, 212, 0.2);
+  background: #ffffff;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:first-child {
+    border-radius: 8px 0 0 8px;
+  }
+
+  &:last-child {
+    border-radius: 0 8px 8px 0;
+  }
+
+  &:hover {
+    background: rgba(0, 127, 212, 0.06);
+  }
+
+  &.active {
+    background: #007fd4;
+    color: #ffffff;
+    border-color: #007fd4;
+  }
+}
+
 .task-composer {
   width: min(920px, 100%);
   margin: 0 auto;
@@ -636,29 +757,92 @@ onUnmounted(() => {
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
 }
 
-.testcase-option {
-  height: 42px;
-  padding: 0 10px;
+.file-upload-btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px dashed rgba(0, 127, 212, 0.35);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #475569;
-  font-size: 14px;
+  background: #ffffff;
+  color: #007fd4;
+  font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  align-self: flex-start;
+  gap: 6px;
+  position: relative;
+
+  &:hover {
+    background: rgba(0, 127, 212, 0.06);
+    border-color: rgba(0, 127, 212, 0.55);
+  }
+}
+
+.file-input-hidden {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
   cursor: pointer;
 }
 
-.testcase-option input {
-  width: 16px;
-  height: 16px;
-  accent-color: #007fd4;
+.task-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.file-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid rgba(0, 127, 212, 0.22);
+  border-radius: 6px;
+  background: rgba(0, 127, 212, 0.05);
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.file-card-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-card-remove {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+
+  &:hover {
+    color: #dc2626;
+  }
+}
+
+.file-card-remove-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .task-input {
@@ -834,7 +1018,6 @@ onUnmounted(() => {
     flex-direction: column;
   }
 
-  .testcase-option,
   .submit-button {
     width: 100%;
   }

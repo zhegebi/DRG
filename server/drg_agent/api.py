@@ -54,7 +54,14 @@ async def create_task(
         task_id = uuid.uuid4().hex
         user_input = req.user_input
         should_generate_test = req.should_generate_test
-        task_name = user_input.replace("\n", "").replace("\r", "")[:10]
+        first_line = user_input.split("\n")[0].strip()
+        if len(first_line) <= 20:
+            task_name = first_line
+        else:
+            truncated = first_line[:20].rstrip()
+            break_chars = "，。；：,. ;:!?、"
+            last_break = max((truncated.rfind(c) for c in break_chars), default=-1)
+            task_name = truncated[:last_break + 1] if last_break > 0 else truncated
         assert current_user.id is not None, "current_user.id is None"
         task_obj = Task(
             id=task_id,
