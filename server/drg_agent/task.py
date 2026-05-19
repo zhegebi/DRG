@@ -11,8 +11,7 @@ from sqlmodel import update
 
 from server.db.utils import get_async_session
 
-from ...config import API_KEY
-from ..table import DrgTask, TaskStatus
+from ..config import API_KEY
 from .models import (
     DIAG_CODE_TO_NAME_TEST,
     DIAG_TO_MDC,
@@ -31,6 +30,7 @@ from .models import (
     DrgTestCase,
     MedicalRecord,
 )
+from .table import DrgTask, TaskStatus
 
 # init the constant variables
 try:

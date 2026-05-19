@@ -32,7 +32,7 @@ from loguru import logger
 from openai import OpenAI
 
 try:
-    from ...config import API_KEY
+    from ..config import API_KEY
 except ImportError:
     _SERVER_DIR = Path(__file__).parent.parent.parent
     sys.path.insert(0, str(_SERVER_DIR))
@@ -305,7 +305,10 @@ TOOLS: list[ToolDefinition] = [
                 "type": "object",
                 "properties": {
                     "code": {"type": "string", "description": "完整的 Mermaid 图表代码（不含 ```mermaid 标记）"},
-                    "file_name": {"type": "string", "description": "保存的图片文件名（不含扩展名），如 'use_case_diagram'"},
+                    "file_name": {
+                        "type": "string",
+                        "description": "保存的图片文件名（不含扩展名），如 'use_case_diagram'",
+                    },
                     "format": {
                         "type": "string",
                         "enum": ["svg", "png"],
@@ -326,7 +329,10 @@ TOOLS: list[ToolDefinition] = [
                 "type": "object",
                 "properties": {
                     "code": {"type": "string", "description": "完整的 PlantUML 代码（包含 @startuml 和 @enduml）"},
-                    "file_name": {"type": "string", "description": "保存的图片文件名（不含扩展名），如 'use_case_overall'"},
+                    "file_name": {
+                        "type": "string",
+                        "description": "保存的图片文件名（不含扩展名），如 'use_case_overall'",
+                    },
                 },
                 "required": ["code", "file_name"],
             },
@@ -361,6 +367,8 @@ _WRITE_TOOL_NAMES = (
     "render_plantuml",
     "save_document",
 )
+
+
 def _tool_name(tool: ToolDefinition) -> str:
     function = cast(dict[str, Any], tool["function"])
     return str(function["name"])
@@ -593,8 +601,7 @@ def _iter_project_files(root: str | Path = "", patterns: list[str] | None = None
             dirnames[:] = [
                 dirname
                 for dirname in dirnames
-                if dirname not in _IGNORED_DIRS
-                and not _is_ignored_path(Path(_rel(current_dir / dirname)))
+                if dirname not in _IGNORED_DIRS and not _is_ignored_path(Path(_rel(current_dir / dirname)))
             ]
             candidates.extend(current_dir / filename for filename in filenames)
 
@@ -771,11 +778,14 @@ def read_data_models() -> str:
         classes = []
         for match in class_pattern.finditer(text):
             bases = match.group("bases")
-            if not any(token in bases or token in text[match.start(): match.start() + 300] for token in ("SQLModel", "BaseModel", "table=True")):
+            if not any(
+                token in bases or token in text[match.start() : match.start() + 300]
+                for token in ("SQLModel", "BaseModel", "table=True")
+            ):
                 continue
             body_start = match.end()
             next_class = class_pattern.search(text, body_start)
-            body = text[body_start: next_class.start() if next_class else len(text)]
+            body = text[body_start : next_class.start() if next_class else len(text)]
             fields = [
                 {"name": f.group("name"), "type": f.group("type").strip()}
                 for f in field_pattern.finditer(body)
@@ -995,6 +1005,7 @@ def read_test_context() -> str:
 def _do_web_search(query: str) -> str:
     """使用 DuckDuckGo Instant Answer API 搜索。"""
     import requests
+
     try:
         resp = requests.get(
             "https://api.duckduckgo.com/",
@@ -1057,9 +1068,7 @@ def _normalize_mermaid_code(code: str) -> str:
         return code
 
     first = lines[0].strip()
-    if first.startswith("stateDiagram") and not any(
-        line.strip().startswith("direction ") for line in lines[1:4]
-    ):
+    if first.startswith("stateDiagram") and not any(line.strip().startswith("direction ") for line in lines[1:4]):
         lines.insert(1, "    direction TB")
     return "\n".join(lines)
 
@@ -1082,9 +1091,7 @@ def _render_mermaid_to_file(code: str, file_name: str, fmt: str = "png") -> str:
         sub_mermaid = json.dumps({"code": sub_code, "mermaid": {"theme": "default"}})
         sub_enc = base64.urlsafe_b64encode(sub_mermaid.encode()).decode().rstrip("=")
         sub_url = (
-            f"https://mermaid.ink/img/{sub_enc}?type=png"
-            if fmt == "png"
-            else f"https://mermaid.ink/svg/{sub_enc}"
+            f"https://mermaid.ink/img/{sub_enc}?type=png" if fmt == "png" else f"https://mermaid.ink/svg/{sub_enc}"
         )
 
         try:
@@ -1114,8 +1121,9 @@ def _render_plantuml_to_file(code: str, file_name: str) -> str:
     PlantUML 专为 UML 图设计，原生支持 Actor（火柴人）、UseCase（椭圆）等元素。
     编码方式：deflate 压缩 → 去 zlib 头尾 → PlantUML base64（+/ → -_）。
     """
-    import requests
     import zlib
+
+    import requests
 
     try:
         compressor = zlib.compressobj(level=9)
@@ -1159,6 +1167,7 @@ def _render_diagram_blocks_for_html(md_text: str) -> str:
         diagram_type = match.group(1)
         code = match.group(2).strip()
         import hashlib
+
         hash_suffix = hashlib.md5(code.encode()).hexdigest()[:8]
         file_name = f"{diagram_type}_{hash_suffix}"
 
@@ -1168,18 +1177,14 @@ def _render_diagram_blocks_for_html(md_text: str) -> str:
             result = _render_plantuml_to_file(code, file_name)
 
         if "渲染失败" in result:
-            return f'<pre><code>{html_module.escape(code)}</code></pre>'
+            return f"<pre><code>{html_module.escape(code)}</code></pre>"
         try:
             png_bytes = (OUTPUT_DIR / result).read_bytes()
             b64 = base64.b64encode(png_bytes).decode()
             data_uri = f"data:image/png;base64,{b64}"
         except Exception:
-            return f'<pre><code>{html_module.escape(code)}</code></pre>'
-        return (
-            f'<div class="figure-container">'
-            f'<img src="{data_uri}" alt="diagram"/>'
-            f'</div>'
-        )
+            return f"<pre><code>{html_module.escape(code)}</code></pre>"
+        return f'<div class="figure-container"><img src="{data_uri}" alt="diagram"/></div>'
 
     return pattern.sub(_replace, md_text)
 
@@ -1252,25 +1257,25 @@ h2:first-of-type {
 
     return f"""\
 @page {{
-    size: {ps['paper_size']};
-    margin-top: {ps['margin_top']};
-    margin-bottom: {ps['margin_bottom']};
-    margin-left: {ps['margin_left']};
-    margin-right: {ps['margin_right']};
+    size: {ps["paper_size"]};
+    margin-top: {ps["margin_top"]};
+    margin-bottom: {ps["margin_bottom"]};
+    margin-left: {ps["margin_left"]};
+    margin-right: {ps["margin_right"]};
 }}
 
 body {{
     font-family: "{bff}", "{bf}", serif;
-    font-size: {font['body_size']};
-    line-height: {body['line_spacing']};
-    text-align: {body['alignment']};
+    font-size: {font["body_size"]};
+    line-height: {body["line_spacing"]};
+    text-align: {body["alignment"]};
 }}
 
 /* ===== 段落 ===== */
 p {{
-    text-indent: {body['first_line_indent']};
-    margin-top: {body['space_before']};
-    margin-bottom: {body['space_after']};
+    text-indent: {body["first_line_indent"]};
+    margin-top: {body["space_before"]};
+    margin-bottom: {body["space_after"]};
 }}
 
 /* ===== 标题页垂直居中容器 ===== */
@@ -1279,43 +1284,43 @@ p {{
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    min-height: {pdf_cfg['title_page_min_height']};
+    min-height: {pdf_cfg["title_page_min_height"]};
     text-align: center;
     page-break-after: always;
 }}
 
 /* ===== 文档总标题（居中）===== */
 .doc-title {{
-    text-align: {doc_title['alignment']};
+    text-align: {doc_title["alignment"]};
     font-family: "{tff}", "{tf}", sans-serif;
-    font-size: {doc_title['font_size']};
-    font-weight: {'bold' if doc_title.get('bold') else 'normal'};
-    margin-top: {doc_title['margin_top']};
-    margin-bottom: {doc_title['margin_bottom']};
+    font-size: {doc_title["font_size"]};
+    font-weight: {"bold" if doc_title.get("bold") else "normal"};
+    margin-top: {doc_title["margin_top"]};
+    margin-bottom: {doc_title["margin_bottom"]};
     text-indent: 0;
 }}
 
 /* ===== 文档元数据（版本号、日期、状态）===== */
 .doc-meta {{
-    text-align: {doc_meta['alignment']};
+    text-align: {doc_meta["alignment"]};
     font-family: "{bff}", "{bf}", serif;
-    font-size: {doc_meta['font_size']};
-    color: {doc_meta['color']};
-    margin-bottom: {doc_meta['margin_bottom']};
+    font-size: {doc_meta["font_size"]};
+    color: {doc_meta["color"]};
+    margin-bottom: {doc_meta["margin_bottom"]};
     text-indent: 0;
 }}
 .doc-meta p {{
     text-align: center;
     text-indent: 0;
-    margin: {pdf_cfg['doc_meta_line_margin']};
+    margin: {pdf_cfg["doc_meta_line_margin"]};
 }}
 
 {heading_css}
 
 /* ===== 全局图片约束（覆盖所有 img，含 Markdown 裸图）===== */
 img {{
-    max-width: {pdf_cfg['image_max_width']};
-    max-height: {pdf_cfg['image_max_height']};
+    max-width: {pdf_cfg["image_max_width"]};
+    max-height: {pdf_cfg["image_max_height"]};
     width: auto;
     height: auto;
     object-fit: contain;
@@ -1323,14 +1328,14 @@ img {{
 
 /* ===== 图表容器（图片本身无缩进，标题由 _center_captions 居中）===== */
 figure, .figure-container {{
-    text-align: {figs['alignment']};
-    margin: {figs['margin']};
+    text-align: {figs["alignment"]};
+    margin: {figs["margin"]};
     text-indent: 0;
 }}
 
 figure img, .figure-container img {{
-    max-width: {pdf_cfg['figure_image_max_width']};
-    max-height: {pdf_cfg['figure_image_max_height']};
+    max-width: {pdf_cfg["figure_image_max_width"]};
+    max-height: {pdf_cfg["figure_image_max_height"]};
     height: auto;
 }}
 
@@ -1340,56 +1345,56 @@ figure + p, .figure-container + p {{
 }}
 
 figcaption, .figcaption {{
-    font-size: {figs['font_size']};
+    font-size: {figs["font_size"]};
     text-align: center;
-    margin-top: {pdf_cfg['caption_margin_top']};
+    margin-top: {pdf_cfg["caption_margin_top"]};
     text-indent: 0;
 }}
 
 /* ===== 表格 ===== */
 table {{
-    margin: {pdf_cfg['table_margin']};
+    margin: {pdf_cfg["table_margin"]};
     border-collapse: collapse;
     text-indent: 0;
 }}
 
 th {{
     font-weight: bold;
-    font-size: {tbls['font_size']};
+    font-size: {tbls["font_size"]};
     text-align: center;
     vertical-align: middle;
-    padding: {tbls['header']['padding']};
-    border: {tbls['border']};
-    background-color: {tbls['header']['background_color']};
+    padding: {tbls["header"]["padding"]};
+    border: {tbls["border"]};
+    background-color: {tbls["header"]["background_color"]};
 }}
 
 td {{
-    font-size: {tbls['font_size']};
+    font-size: {tbls["font_size"]};
     text-align: center;
     vertical-align: middle;
-    padding: {tbls['cell']['padding']};
-    border: {tbls['border']};
+    padding: {tbls["cell"]["padding"]};
+    border: {tbls["border"]};
 }}
 
 
 /* ===== 代码块 ===== */
 pre {{
     font-family: "{mf}", "{mff}", monospace;
-    font-size: {code_cfg['font_size']};
-    line-height: {code_cfg['line_spacing']};
-    background-color: {code_cfg['background_color']};
-    border: {code_cfg['border']};
-    padding: {code_cfg['padding']};
+    font-size: {code_cfg["font_size"]};
+    line-height: {code_cfg["line_spacing"]};
+    background-color: {code_cfg["background_color"]};
+    border: {code_cfg["border"]};
+    padding: {code_cfg["padding"]};
     overflow-x: auto;
-    text-indent: {code_cfg['text_indent']};
+    text-indent: {code_cfg["text_indent"]};
     white-space: pre-wrap;
 }}
 
 code {{
     font-family: "{mf}", "{mff}", monospace;
-    font-size: {code_cfg['font_size']};
-    background-color: {code_cfg['background_color']};
-    padding: {pdf_cfg['inline_code_padding']};
+    font-size: {code_cfg["font_size"]};
+    background-color: {code_cfg["background_color"]};
+    padding: {pdf_cfg["inline_code_padding"]};
 }}
 
 pre code {{
@@ -1399,21 +1404,21 @@ pre code {{
 
 /* ===== 列表 ===== */
 ul, ol {{
-    margin: {pdf_cfg['list_margin']};
-    padding-left: {lists_cfg['indent']};
-    text-indent: {lists_cfg['text_indent']};
+    margin: {pdf_cfg["list_margin"]};
+    padding-left: {lists_cfg["indent"]};
+    text-indent: {lists_cfg["text_indent"]};
 }}
 
 li {{
-    margin-bottom: {lists_cfg['item_margin_bottom']};
+    margin-bottom: {lists_cfg["item_margin_bottom"]};
     text-indent: 0;
 }}
 
 /* ===== 分隔线 ===== */
 hr {{
     border: none;
-    border-top: {pdf_cfg['horizontal_rule_border']};
-    margin: {pdf_cfg['horizontal_rule_margin']};
+    border-top: {pdf_cfg["horizontal_rule_border"]};
+    margin: {pdf_cfg["horizontal_rule_margin"]};
 }}
 {pb_css}"""
 
@@ -1441,6 +1446,7 @@ _BOILERPLATE_PATTERNS = [
 def _clean_boilerplate(text: str) -> str:
     """清理 LLM 输出中常见的客套话和 AI 声明。"""
     import re as _re
+
     for pattern in _BOILERPLATE_PATTERNS:
         text = _re.sub(pattern, "", text, flags=_re.IGNORECASE)
     return text.strip()
@@ -1452,20 +1458,20 @@ def _fix_unordered_lists_in_md(md_text: str) -> str:
     """
     import re as _re
 
-    parts = _re.split(r'(```.*?```)', md_text, flags=_re.DOTALL)
+    parts = _re.split(r"(```.*?```)", md_text, flags=_re.DOTALL)
 
     for i in range(0, len(parts), 2):
-        lines = parts[i].split('\n')
+        lines = parts[i].split("\n")
         fixed = []
         counter = 0
         prev_blank = False
 
         for line in lines:
-            m = _re.match(r'^(\s*)- (.*)', line)
+            m = _re.match(r"^(\s*)- (.*)", line)
             if m:
                 indent, content = m.groups()
                 counter = 1 if prev_blank else counter + 1
-                fixed.append(f'{indent}({counter}) {content}')
+                fixed.append(f"{indent}({counter}) {content}")
                 prev_blank = False
             else:
                 fixed.append(line)
@@ -1474,13 +1480,13 @@ def _fix_unordered_lists_in_md(md_text: str) -> str:
                     prev_blank = True
                 else:
                     # 非空非列表行：若为正文（非缩进续行），重置计数器
-                    if not line.startswith((' ', '\t')) and not _re.match(r'^#', line):
+                    if not line.startswith((" ", "\t")) and not _re.match(r"^#", line):
                         counter = 0
                     prev_blank = False
 
-        parts[i] = '\n'.join(fixed)
+        parts[i] = "\n".join(fixed)
 
-    return ''.join(parts)
+    return "".join(parts)
 
 
 _DETAIL_LABELS = {
@@ -1537,7 +1543,7 @@ def _looks_like_promotable_title(lines: list[str], index: int) -> bool:
         return False
     if not re.match(r"^\s*(?:#{5,6}\s*)?\(\d+\)\s+\S+", line):
         return False
-    for next_line in lines[index + 1:index + 6]:
+    for next_line in lines[index + 1 : index + 6]:
         if not next_line.strip():
             continue
         if re.match(r"^#{1,6}\s+", next_line):
@@ -1645,7 +1651,7 @@ def _normalized_table_row(cells: list[str], target_count: int) -> tuple[list[str
         cells = cells + [""] * (target_count - len(cells))
         changed = True
     elif len(cells) > target_count:
-        cells = cells[:target_count - 1] + ["；".join(cells[target_count - 1:])]
+        cells = cells[: target_count - 1] + ["；".join(cells[target_count - 1 :])]
         changed = True
     return cells, changed
 
@@ -1664,7 +1670,7 @@ def _repair_table_block(block: list[str], start_line: int) -> tuple[list[str], l
         if not _is_alignment_cell(cell):
             break
         leading_alignment.append(cell)
-    separator_tail = separator[len(leading_alignment):]
+    separator_tail = separator[len(leading_alignment) :]
     data_counts = [len(row) for row in data_rows if row]
     target_count = max(set(data_counts), key=data_counts.count) if data_counts else len(leading_alignment)
 
@@ -1708,9 +1714,7 @@ def _repair_table_block(block: list[str], start_line: int) -> tuple[list[str], l
 def _has_table_caption(lines: list[str], index: int) -> bool:
     lo = json.loads(_OUTPUT_LAYOUT)
     prefix = re.escape(lo["tables"]["prefix"])
-    caption_re = re.compile(
-        rf'^\s*(?:\*\*)?\s*{prefix}\s*(?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*\s*[：:].*(?:\*\*)?\s*$'
-    )
+    caption_re = re.compile(rf"^\s*(?:\*\*)?\s*{prefix}\s*(?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*\s*[：:].*(?:\*\*)?\s*$")
     if index > 0 and caption_re.match(lines[index - 1]):
         return True
     if index > 1 and lines[index - 1].strip() == "" and caption_re.match(lines[index - 2]):
@@ -1765,7 +1769,7 @@ def _validate_table_captions(md_text: str) -> tuple[str, list[str]]:
     issues = []
 
     def _repair_part(part: str, line_offset: int) -> str:
-        lines = part.split('\n')
+        lines = part.split("\n")
         fixed_lines = []
         i = 0
 
@@ -1798,30 +1802,31 @@ def _validate_table_captions(md_text: str) -> tuple[str, list[str]]:
             issues.extend(block_issues)
             fixed_lines.extend(repaired)
 
-        return '\n'.join(fixed_lines)
+        return "\n".join(fixed_lines)
 
-    parts = _re.split(r'(```.*?```)', md_text, flags=_re.DOTALL)
+    parts = _re.split(r"(```.*?```)", md_text, flags=_re.DOTALL)
     line_offset = 0
     for i, part in enumerate(parts):
         if i % 2 == 0:
             parts[i] = _repair_part(part, line_offset)
         line_offset += part.count("\n")
 
-    return ''.join(parts), issues
+    return "".join(parts), issues
 
 
 def _find_next_table_number(md_text: str, up_to_line: int) -> str:
     """找出下一个可用的表号。"""
     import re as _re
+
     prefix = _re.escape(json.loads(_OUTPUT_LAYOUT)["tables"]["prefix"])
-    prefix_length = sum(len(line) + 1 for line in md_text.split('\n')[:up_to_line])
+    prefix_length = sum(len(line) + 1 for line in md_text.split("\n")[:up_to_line])
     search_text = md_text[:prefix_length] if up_to_line > 0 else md_text
-    existing = _re.findall(rf'\*\*{prefix}\s*((?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*)\s*[：:]', search_text)
+    existing = _re.findall(rf"\*\*{prefix}\s*((?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*)\s*[：:]", search_text)
     if existing:
         last = existing[-1]
         # 尝试递增
-        sep = '-' if '-' in last else '.'
-        parts = last.replace('-', '.').split('.')
+        sep = "-" if "-" in last else "."
+        parts = last.replace("-", ".").split(".")
         try:
             parts[-1] = str(int(parts[-1]) + 1)
             return sep.join(parts)
@@ -1934,6 +1939,7 @@ def _extract_doc_info(md_text: str) -> dict:
         info[f["key"]] = ""
 
     import re as _re
+
     m = _re.search(r"^#\s+(.+)$", md_text, _re.MULTILINE)
     if m:
         info["title"] = m.group(1).strip()
@@ -1968,9 +1974,12 @@ def _format_title_html(md_body: str, md_text: str, doc_info: dict | None = None)
 </div></div>"""
 
     import re as _re
+
     html_out = _re.sub(r"<h1[^>]*>.*?</h1>", title_block, md_body, count=1, flags=_re.DOTALL)
     # 清理标题页 wrapper 后多余的空 <p> 段落
-    html_out = _re.sub(r'(<div class="title-page-wrapper">.*?</div>)\s*<p>\s*</p>\s*', r'\1', html_out, flags=_re.DOTALL)
+    html_out = _re.sub(
+        r'(<div class="title-page-wrapper">.*?</div>)\s*<p>\s*</p>\s*', r"\1", html_out, flags=_re.DOTALL
+    )
     return html_out
 
 
@@ -1981,6 +1990,7 @@ def _center_captions(html_body: str) -> str:
     Markdown 粗体标题会被转换成 <strong>表1：...</strong>，因此需要按去标签后的文本判断。
     """
     import re as _re
+
     lo = json.loads(_OUTPUT_LAYOUT)
     caption_font_sizes = {
         lo["figures"]["prefix"]: lo["figures"]["font_size"],
@@ -1992,8 +2002,18 @@ def _center_captions(html_body: str) -> str:
         rf"^({prefix_pattern})\s*(?P<num>(?:[A-Z]?\d+|[A-Z])(?:[-.]\d+)*)(?P<sep>[：:]|\s+)(?P<title>.+)$"
     )
     non_caption_starts = (
-        "说明", "展示", "显示", "列出", "列举", "给出", "描述",
-        "表示", "如下", "所示", "用于", "为",
+        "说明",
+        "展示",
+        "显示",
+        "列出",
+        "列举",
+        "给出",
+        "描述",
+        "表示",
+        "如下",
+        "所示",
+        "用于",
+        "为",
     )
 
     def _is_caption(text: str) -> bool:
@@ -2020,7 +2040,7 @@ def _center_captions(html_body: str) -> str:
         if "style=" in attrs:
             attrs = _re.sub(
                 r'style=(["\'])(.*?)\1',
-                rf'style=\1\2;text-align:center;text-indent:0;font-size:{font_size}\1',
+                rf"style=\1\2;text-align:center;text-indent:0;font-size:{font_size}\1",
                 attrs,
                 count=1,
             )
@@ -2043,8 +2063,9 @@ def _center_bare_images(html_body: str) -> str:
         if "style=" in attrs:
             attrs = _re.sub(
                 r'style=(["\'])(.*?)\1',
-                r'style=\1\2;text-align:center;text-indent:0\1',
-                attrs, count=1,
+                r"style=\1\2;text-align:center;text-indent:0\1",
+                attrs,
+                count=1,
             )
             return f"<p{attrs}>{inner}</p>"
         return f'<p{attrs} style="text-align:center;text-indent:0">{inner}</p>'
@@ -2067,8 +2088,9 @@ def convert_to_pdf(md_path: str) -> str:
     Returns:
         PDF 文件路径（与源 .md 同目录）
     """
-    import markdown as md_lib
     import re as _re
+
+    import markdown as md_lib
 
     md_file = Path(md_path)
     if not md_file.exists():
@@ -2091,8 +2113,9 @@ def convert_to_pdf(md_path: str) -> str:
     # ── 步骤2: MD → HTML（先转义 UML 原型符号 <<...>>，防止被当作 HTML 标签）──
     logger.info("  [PDF] 步骤2: Markdown → HTML")
     md_text = _re.sub(
-        r'<<(include|extend|uses|depends|refine|trace|implement|derive)>>',
-        r'&lt;&lt;\1&gt;&gt;', md_text,
+        r"<<(include|extend|uses|depends|refine|trace|implement|derive)>>",
+        r"&lt;&lt;\1&gt;&gt;",
+        md_text,
     )
     md_extensions = ["tables", "fenced_code", "codehilite", "toc", "attr_list"]
     md_body = md_lib.markdown(md_text, extensions=md_extensions)
@@ -2127,6 +2150,7 @@ def convert_to_pdf(md_path: str) -> str:
 
     try:
         from playwright.sync_api import sync_playwright
+
         lo = json.loads(_OUTPUT_LAYOUT)
         ps = lo.get("page_setup", {})
         pdf_cfg = lo["pdf_rendering"]

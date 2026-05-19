@@ -12,7 +12,7 @@ from server.db.utils import get_async_session
 from server.user.auth import get_current_user
 from server.user.table import User
 
-from ..table import DrgTask, TaskStatus
+from .table import DrgTask, TaskStatus
 from .task import DrgResult, DrgResultWithTestCase, StepLog, Task, TaskStep
 
 router = APIRouter(prefix="/api/drg")

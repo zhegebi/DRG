@@ -2,9 +2,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from .agent.docgen_agent.api import router as docgen_agent_router
-from .agent.drg_agent.api import router as drg_agent_router
 from .db import init_db
+from .docgen_agent.api import router as docgen_agent_router
+from .drg_agent.api import router as drg_agent_router
 from .static import init_assets, mount_static
 from .user.api import router as auth_router
 

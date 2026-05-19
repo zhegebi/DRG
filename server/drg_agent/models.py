@@ -155,7 +155,7 @@ def load_data(path: Path):
     return data_json
 
 
-DRG_RULES_DIR = Path(__file__).parent / "drg_rules"
+DRG_RULES_DIR = Path(__file__).parent / "rules"
 
 mdc_adrg_drg_json = load_data(DRG_RULES_DIR / "mdc_adrg_drg.json")
 MDC_ADRG_DRG = MdcAdrgDrg.model_validate_json(mdc_adrg_drg_json)

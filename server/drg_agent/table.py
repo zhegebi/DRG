@@ -4,7 +4,7 @@ from typing import Optional
 
 from sqlmodel import JSON, Column, Field, SQLModel
 
-__all__ = ["Agent", "DrgTask"]
+__all__ = ["DrgTask"]
 
 
 class TaskStatus(str, Enum):
@@ -12,17 +12,6 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
-
-
-class Agent(SQLModel, table=True):
-    """
-    Agent model representing an agent in database.
-    This is hardcoded when system starts.
-    """
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    description: str
 
 
 class DrgTask(SQLModel, table=True):
