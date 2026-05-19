@@ -67,7 +67,7 @@ const props = withDefaults(defineProps<Props>(), {
 const isOpen = ref(props.defaultOpen)
 const contentRef = ref<HTMLElement | null>(null)
 const panelId = `dropdown-panel-${Math.random().toString(36).slice(2, 10)}`
-const bottomStickThreshold = 15
+const bottomStickThreshold = 25
 
 const statusIconMap: Record<DropDownStatus, string> = {
   pending: mdiClockOutline,
@@ -234,7 +234,7 @@ watch(
 
 .dropdown-content {
   margin-top: 5px;
-  height: 60px;
+  height: 100px;
   padding: 5px 15px;
   border: 1px solid rgba(0, 127, 212, 0.12);
   border-radius: 8px;
@@ -260,10 +260,42 @@ watch(
 
 .dropdown-content--menu :deep(.dropdown-menu) {
   max-width: none;
+  border: none;
 }
 
 .dropdown-content--menu :deep(.dropdown-menu + .dropdown-menu) {
-  margin-top: 8px;
+  margin-top: 6px;
+}
+
+.dropdown-content--menu :deep(.dropdown-trigger) {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 12px;
+}
+
+.dropdown-content--menu :deep(.dropdown-trigger:hover) {
+  background: rgba(0, 127, 212, 0.05);
+}
+
+.dropdown-content--menu :deep(.dropdown-menu.is-open > .dropdown-trigger) {
+  background: rgba(0, 127, 212, 0.06);
+  box-shadow: none;
+}
+
+.dropdown-content--menu :deep(.dropdown-content) {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 4px 0 4px 12px;
+  border-radius: 0;
+  margin-top: 2px;
+}
+
+.dropdown-content--menu :deep(.trigger-title) {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .dropdown-content :deep(p) {

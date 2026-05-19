@@ -1,3 +1,4 @@
+import asyncio
 import random
 from datetime import datetime
 from enum import Enum
@@ -504,7 +505,9 @@ class Task(BaseModel):
         ]
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, "成功生成最终结果的解释")
         Task.mark_step_done(self.id, TaskStep.GET_FINAL_RESULT)
-        return DrgResult(mdc=mdc_code, adrg=adrg_code, drg=drg_code, complication=mcc_cc_level, reason="\n\n".join(lines))
+        return DrgResult(
+            mdc=mdc_code, adrg=adrg_code, drg=drg_code, complication=mcc_cc_level, reason="\n\n".join(lines)
+        )
 
     """
     workflow of generating DRG test case
@@ -686,10 +689,15 @@ class Task(BaseModel):
                         logger.exception(f"cannot update task status, error: {e}")
                         raise e
                     medical_record = await self._extract_medical_record_info(medical_record_text)
+                    await asyncio.sleep(0.2)
                     mdc_code = await self._get_mdc_code(medical_record_text, medical_record)
+                    await asyncio.sleep(0.2)
                     adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                    await asyncio.sleep(0.2)
                     mcc_cc_level = self._get_mcc_cc_level(medical_record)
+                    await asyncio.sleep(0.2)
                     drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
+                    await asyncio.sleep(0.2)
                     final_result = self._get_final_result(
                         medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name
                     )
@@ -780,10 +788,15 @@ class Task(BaseModel):
                         logger.exception(f"cannot update task result, error: {e}")
                         raise e
                     medical_record = await self._extract_medical_record_info(test_case.medical_record_text)
+                    await asyncio.sleep(0.2)
                     mdc_code = await self._get_mdc_code(test_case.medical_record_text, medical_record)
+                    await asyncio.sleep(0.2)
                     adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                    await asyncio.sleep(0.2)
                     mcc_cc_level = self._get_mcc_cc_level(medical_record)
+                    await asyncio.sleep(0.2)
                     drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
+                    await asyncio.sleep(0.2)
                     final_result = self._get_final_result(
                         medical_record, mdc_code, adrg_code, mcc_cc_level, drg_code, drg_name
                     )

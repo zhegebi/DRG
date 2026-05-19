@@ -491,11 +491,12 @@ onUnmounted(() => {
 <style lang="scss" scoped>
 @use "@/common/global.scss" as *;
 .drg-agent-layout {
-  min-height: calc(100vh - $control-bar-height);
+  height: calc(100vh - $control-bar-height);
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   background: #f8fafc;
   color: #1e293b;
+  overflow: hidden;
 }
 
 .task-sidebar {
@@ -506,6 +507,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .new-task-button {
@@ -530,6 +533,8 @@ onUnmounted(() => {
 }
 
 .task-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -594,11 +599,12 @@ onUnmounted(() => {
 }
 
 .agent-main {
-  min-height: calc(100vh - $control-bar-height);
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .new-task-view {
-  min-height: calc(100vh - $control-bar-height);
+  min-height: 100%;
   padding: 32px;
   box-sizing: border-box;
   display: flex;
