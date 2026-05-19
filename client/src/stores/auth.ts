@@ -7,27 +7,6 @@ import {
   refreshAccessTokenApiAuthRefreshPost 
 } from '@/api';
 
-// 测试模式开关 - 设为 true 时优先使用测试用户
-const TEST_MODE = true
-
-// 预设的测试用户（用户名/邮箱 + 密码）
-const TEST_USERS = [
-  {
-    id: 1,
-    username: 'admin',
-    email: 'admin@example.com',
-    password: 'admin123',
-    displayName: '管理员'
-  },
-  {
-    id: 2,
-    username: 'user',
-    email: 'user@example.com',
-    password: 'user123',
-    displayName: '普通用户'
-  }
-]
-
 interface User {
   id?: number;
   username?: string;
@@ -81,47 +60,10 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null;
   };
 
-  // 验证预设测试用户
-  const verifyTestUser = (identifier: string, password: string, type: 'email' | 'username'): User | null => {
-    const foundUser = TEST_USERS.find(u => {
-      if (type === 'email') {
-        return u.email.toLowerCase() === identifier.toLowerCase() && u.password === password;
-      } else {
-        return u.username.toLowerCase() === identifier.toLowerCase() && u.password === password;
-      }
-    });
-    
-    if (foundUser) {
-      return {
-        id: foundUser.id,
-        username: foundUser.username,
-        email: foundUser.email,
-        displayName: foundUser.displayName
-      };
-    }
-    return null;
-  };
-
-  // 登录：优先测试用户，其次真实后端
   const login = async (identifier: string, password: string, type: 'email' | 'username' = 'email') => {
     isLoading.value = true;
     error.value = null;
     
-    // 1. 先检查是否是测试用户
-    if (TEST_MODE) {
-      const testUser = verifyTestUser(identifier, password, type);
-      if (testUser) {
-        console.log('【测试模式】使用测试用户登录', testUser);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        setAuth(`test-token-${testUser.id}`, testUser);
-        isLoading.value = false;
-        return true;
-      }
-      // 不是测试用户，继续尝试真实登录
-      console.log('【测试模式】不是测试用户，尝试真实登录');
-    }
-    
-    // 2. 尝试真实后端登录
     try {
       const result = await loginApiAuthLoginPost({
         body: { type, identifier, password },
@@ -156,22 +98,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   };
 
-  // 注册：真实后端
   const signup = async (username: string, email: string, password: string) => {
     isLoading.value = true;
     error.value = null;
-    
-    // 检查用户名是否与测试用户冲突
-    if (TEST_MODE) {
-      const conflict = TEST_USERS.some(u => 
-        u.username === username || u.email === email
-      );
-      if (conflict) {
-        error.value = '用户名或邮箱与演示账号冲突，请换一个';
-        isLoading.value = false;
-        return false;
-      }
-    }
     
     try {
       const result = await signupApiAuthSignupPost({
@@ -211,15 +140,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   };
 
-  // 登出
   const logout = async () => {
-    // 测试模式的 token 不需要调用后端
-    if (TEST_MODE && accessToken.value?.startsWith('test-token')) {
-      console.log('【测试模式】测试用户登出');
-      clearAuth();
-      return;
-    }
-    
     try {
       await logoutApiAuthLogoutPost();
     } catch (err) {
@@ -229,12 +150,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   };
 
-  // 刷新 token
   const refreshToken = async () => {
-    if (TEST_MODE && accessToken.value?.startsWith('test-token')) {
-      return true;
-    }
-    
     try {
       const result = await refreshAccessTokenApiAuthRefreshPost();
       const data = result.data as any;
