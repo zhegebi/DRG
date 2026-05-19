@@ -68,65 +68,64 @@
         </div>
 
         <div v-if="selectedTask" class="task-flow-panels">
-          <template v-if="selectedTask.should_generate_test">
-            <DropDownMenu
-              title="生成测试用例"
-              panel-type="menu"
-              :status="getGroupStatus(testCaseSteps)"
-              :default-open="true"
-            >
+          <template v-if="viewMode === 'progress'">
+            <template v-if="selectedTask.should_generate_test">
               <DropDownMenu
-                v-for="step in testCaseSteps"
-                :key="step"
-                :title="stepNameMap[step]"
-                :content="getStepContent(step)"
-                :status="getStepStatus(step, testCaseSteps)"
-              />
-            </DropDownMenu>
+                title="生成测试用例"
+                panel-type="menu"
+                :status="getGroupStatus(testCaseSteps)"
+                :default-open="true"
+              >
+                <DropDownMenu
+                  v-for="step in testCaseSteps"
+                  :key="step"
+                  :title="stepNameMap[step]"
+                  :content="getStepContent(step)"
+                  :status="getStepStatus(step, testCaseSteps)"
+                />
+              </DropDownMenu>
 
-            <DropDownMenu
-              title="将测试用例DRG入组"
-              panel-type="menu"
-              :status="getGroupStatus(drgGroupingSteps)"
-              :default-open="true"
-            >
               <DropDownMenu
-                v-for="step in drgGroupingSteps"
-                :key="step"
-                :title="stepNameMap[step]"
-                :content="getStepContent(step)"
-                :status="getStepStatus(step, drgGroupingSteps)"
-              />
-            </DropDownMenu>
+                title="将测试用例DRG入组"
+                panel-type="menu"
+                :status="getGroupStatus(drgGroupingSteps)"
+                :default-open="true"
+              >
+                <DropDownMenu
+                  v-for="step in drgGroupingSteps"
+                  :key="step"
+                  :title="stepNameMap[step]"
+                  :content="getStepContent(step)"
+                  :status="getStepStatus(step, drgGroupingSteps)"
+                />
+              </DropDownMenu>
+            </template>
+
+            <template v-else>
+              <DropDownMenu
+                title="将电子病历DRG入组"
+                panel-type="menu"
+                :status="getGroupStatus(drgGroupingSteps)"
+                :default-open="true"
+              >
+                <DropDownMenu
+                  v-for="step in drgGroupingSteps"
+                  :key="step"
+                  :title="stepNameMap[step]"
+                  :content="getStepContent(step)"
+                  :status="getStepStatus(step, drgGroupingSteps)"
+                />
+              </DropDownMenu>
+            </template>
           </template>
 
           <template v-else>
-            <DropDownMenu
-              title="将电子病历DRG入组"
-              panel-type="menu"
-              :status="getGroupStatus(drgGroupingSteps)"
-              :default-open="true"
-            >
-              <DropDownMenu
-                v-for="step in drgGroupingSteps"
-                :key="step"
-                :title="stepNameMap[step]"
-                :content="getStepContent(step)"
-                :status="getStepStatus(step, drgGroupingSteps)"
-              />
-            </DropDownMenu>
+            <div class="result-panel">
+              <div v-if="resultContent" class="result-markdown" v-html="renderedResult"></div>
+              <div v-else-if="isLoadingResult" class="result-loading">加载结果中...</div>
+              <div v-else class="result-empty">暂无结果</div>
+            </div>
           </template>
-
-          <DropDownMenu
-            v-if="viewMode === 'result'"
-            title="结果"
-            panel-type="text"
-            :default-open="true"
-          >
-            <div v-if="isLoadingResult" class="result-loading">加载结果中...</div>
-            <div v-else-if="resultContent" class="result-markdown" v-html="renderedResult"></div>
-            <div v-else class="result-empty">暂无结果</div>
-          </DropDownMenu>
         </div>
       </div>
     </div>
@@ -243,9 +242,21 @@ function getStepContent(step: TaskStep): string {
   return lines.join('\n')
 }
 
+function drgGroupingHasStarted(): boolean {
+  return drgGroupingSteps.some((step) => {
+    const lines = stepStates.value[step]?.lines
+    return lines && lines.length > 0
+  })
+}
+
 function getStepStatus(step: TaskStep, group: TaskStep[]): TaskStatus {
   const lines = stepStates.value[step]?.lines ?? []
   if (lines.length === 0) return 'pending'
+
+  // 测试用例生成步骤：一旦 DRG 入组阶段开始，全部算完成
+  if (group === testCaseSteps && drgGroupingHasStarted()) {
+    return 'success'
+  }
 
   let lastContentIndex = -1
   for (let i = group.length - 1; i >= 0; i--) {
@@ -722,6 +733,34 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.result-panel {
+  width: 100%;
+  min-height: 200px;
+  padding: 20px 24px;
+  border: 1px solid rgba(0, 127, 212, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 127, 212, 0.35) transparent;
+}
+
+.result-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.result-panel::-webkit-scrollbar-thumb {
+  background: rgba(0, 127, 212, 0.35);
+  border-radius: 999px;
+}
+
+.result-panel::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .result-loading,

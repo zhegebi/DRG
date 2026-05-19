@@ -504,7 +504,7 @@ class Task(BaseModel):
         ]
         Task.add_log_line(self.id, TaskStep.GET_FINAL_RESULT, "成功生成最终结果的解释")
         Task.mark_step_done(self.id, TaskStep.GET_FINAL_RESULT)
-        return DrgResult(mdc=mdc_code, adrg=adrg_code, drg=drg_code, complication=mcc_cc_level, reason="\n".join(lines))
+        return DrgResult(mdc=mdc_code, adrg=adrg_code, drg=drg_code, complication=mcc_cc_level, reason="\n\n".join(lines))
 
     """
     workflow of generating DRG test case

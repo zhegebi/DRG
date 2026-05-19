@@ -81,8 +81,9 @@ export const getTaskResultStream = async (
                 if (chunk === "[END]") {
                     return fullText
                 }
-                fullText += chunk
-                onChunk(chunk)
+                const restored = chunk.replace(/\r/g, "\n")
+                fullText += restored
+                onChunk(restored)
             }
         }
     }
