@@ -271,6 +271,8 @@ const viewMode = ref<'progress' | 'result'>('progress')
 const resultContent = ref('')
 const isLoadingResult = ref(false)
 const isEditing = ref(false)
+const isSubmitting = ref(false)
+let resultVersion = 0
 
 let progressTimer: ReturnType<typeof setInterval> | null = null
 let statusTimer: ReturnType<typeof setInterval> | null = null
@@ -456,29 +458,41 @@ function startProgressPolling(taskId: string) {
 }
 
 async function loadResult(taskId: string) {
+  resultVersion++
+  const version = resultVersion
   isLoadingResult.value = true
   resultContent.value = ''
   try {
     const text = await getTaskResult(taskId)
+    if (version !== resultVersion) return
     resultContent.value = text
   } catch (e) {
+    if (version !== resultVersion) return
     resultContent.value = `加载结果失败: ${e}`
   } finally {
-    isLoadingResult.value = false
+    if (version === resultVersion) {
+      isLoadingResult.value = false
+    }
   }
 }
 
 async function loadResultStream(taskId: string) {
+  resultVersion++
+  const version = resultVersion
   isLoadingResult.value = true
   resultContent.value = ''
   try {
     await getTaskResultStream(taskId, (chunk) => {
+      if (version !== resultVersion) return
       resultContent.value += chunk
     })
   } catch (e) {
+    if (version !== resultVersion) return
     resultContent.value = `加载结果失败: ${e}`
   } finally {
-    isLoadingResult.value = false
+    if (version === resultVersion) {
+      isLoadingResult.value = false
+    }
   }
 }
 
@@ -557,7 +571,6 @@ const switchAgent = (type: AgentType) => {
   selectedTaskId.value = null
   taskInput.value = ''
   fileList.value = []
-  fetchTaskList()
 }
 
 const removeFile = (index: number) => {
@@ -589,6 +602,7 @@ const handleFileUpload = async (e: Event) => {
 }
 
 const submitNewTask = async () => {
+  if (isSubmitting.value) return
   const input = taskInput.value.trim()
   const fileContents = fileList.value.map((f) => f.content).join('\n')
   const parts: string[] = []
@@ -597,6 +611,7 @@ const submitNewTask = async () => {
   const userInput = parts.join('\n')
   if (!userInput) return
 
+  isSubmitting.value = true
   try {
     const taskId = await createTask(userInput, agentType.value === 'test')
     await fetchTaskList()
@@ -605,6 +620,8 @@ const submitNewTask = async () => {
     fileList.value = []
   } catch (e) {
     console.error('创建任务失败:', e)
+  } finally {
+    isSubmitting.value = false
   }
 }
 
