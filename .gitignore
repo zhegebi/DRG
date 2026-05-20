@@ -13,6 +13,9 @@ venv/
 .venv/
 env/
 
+# agent output
+output_docs/
+
 # Environment variables
 .env
 
