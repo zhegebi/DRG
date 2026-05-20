@@ -1075,6 +1075,9 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.8;
   overflow-y: auto;
+  overflow-x: hidden;
+  overflow-wrap: break-word;
+  word-break: break-word;
   scrollbar-width: thin;
   scrollbar-color: rgba($primary, 0.35) transparent;
 }
@@ -1135,6 +1138,13 @@ onUnmounted(() => {
 
   :deep(li) {
     margin: 2px 0;
+  }
+
+  :deep(pre),
+  :deep(code) {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 }
 

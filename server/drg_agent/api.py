@@ -52,7 +52,7 @@ async def create_task(
     """
     try:
         task_id = uuid.uuid4().hex
-        user_input = req.user_input
+        user_input = req.user_input.replace("\r\n", "\n").replace("\r", "\n")
         should_generate_test = req.should_generate_test
         first_line = user_input.split("\n")[0].strip()
         if len(first_line) <= 20:
@@ -171,7 +171,6 @@ async def get_task_result_stream(
             ).where(DrgTask.task_id == task_id)
         )
         result, err_msg, status, should_generate_test, user_input = query_result.first()
-        user_input_display = user_input.replace("\n", "  \n")
         if should_generate_test:
             result = DrgResultWithTestCase.model_validate(result)
             if status == TaskStatus.SUCCESS.value and result.test_result is not None:
@@ -179,7 +178,9 @@ async def get_task_result_stream(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 测试病历
 
@@ -218,7 +219,9 @@ async def get_task_result_stream(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 测试病历
 
@@ -253,7 +256,9 @@ async def get_task_result_stream(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 入组结果
 
@@ -274,7 +279,9 @@ async def get_task_result_stream(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 入组结果
 
@@ -329,7 +336,6 @@ async def get_task_result(
             ).where(DrgTask.task_id == task_id)
         )
         result, err_msg, status, should_generate_test, user_input = query_result.first()
-        user_input_display = user_input.replace("\n", "  \n")
         if should_generate_test:
             result = DrgResultWithTestCase.model_validate(result)
             if status == TaskStatus.SUCCESS.value and result.test_result is not None:
@@ -337,7 +343,9 @@ async def get_task_result(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 测试病历
 
@@ -376,7 +384,9 @@ async def get_task_result(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 测试病历
 
@@ -411,7 +421,9 @@ async def get_task_result(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 入组结果
 
@@ -432,7 +444,9 @@ async def get_task_result(
 
 ### 用户输入
 
-{user_input_display}
+```
+{user_input}
+```
 
 ### 入组结果
 
