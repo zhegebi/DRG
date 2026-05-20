@@ -172,9 +172,13 @@ async def get_task_result_stream(
         )
         result, err_msg, status, should_generate_test, user_input = query_result.first()
         if should_generate_test:
-            result = DrgResultWithTestCase.model_validate(result)
-            if status == TaskStatus.SUCCESS.value and result.test_result is not None:
-                response = f"""# DRG 测试用例生成及其验证
+            if status == TaskStatus.FAILED.value:
+                try:
+                    parsed = DrgResultWithTestCase.model_validate(result)
+                    has_record = bool(parsed.medical_record_text)
+                    has_expected = bool(parsed.expected_result)
+                    if has_record and has_expected:
+                        response = f"""# DRG 测试用例生成及其验证
 
 ### 用户输入
 
@@ -184,97 +188,93 @@ async def get_task_result_stream(
 
 ### 测试病历
 
-{result.medical_record_text}
+{parsed.medical_record_text}
 
 ### 预期结果
 
-**MDC 分组**: {result.expected_result.mdc}
+**MDC 分组**: {parsed.expected_result.mdc}
 
-**ADRG 分组**: {result.expected_result.adrg}
+**ADRG 分组**: {parsed.expected_result.adrg}
 
-**最终 DRG 组**: {result.expected_result.drg}
+**最终 DRG 组**: {parsed.expected_result.drg}
 
-**并发症/合并症等级**: {result.expected_result.complication}
-
-**入组理由**:
-
-{result.expected_result.reason}
-
-### 测试结果
-
-**MDC 分组**: {result.test_result.mdc}
-
-**ADRG 分组**: {result.test_result.adrg}
-
-**最终 DRG 组**: {result.test_result.drg}
-
-**并发/合并症等级**: {result.test_result.complication}
+**并发症/合并症等级**: {parsed.expected_result.complication}
 
 **入组理由**:
 
-{result.test_result.reason}
-"""
-            elif status == TaskStatus.FAILED.value:
-                response = f"""# DRG 测试用例生成及其验证
-
-### 用户输入
-
-```
-{user_input}
-```
-
-### 测试病历
-
-{result.medical_record_text}
-
-### 预期结果
-
-**MDC 分组**: {result.expected_result.mdc}
-
-**ADRG 分组**: {result.expected_result.adrg}
-
-**最终 DRG 组**: {result.expected_result.drg}
-
-**并发症/合并症等级**: {result.expected_result.complication}
-
-**入组理由**:
-
-{result.expected_result.reason}
+{parsed.expected_result.reason}
 
 ### 测试结果
 
 **错误信息**:
 
 {err_msg}
+"""
+                    else:
+                        raise ValueError
+                except Exception:
+                    response = f"""# DRG 测试用例生成及其验证
+
+### 用户输入
+
+```
+{user_input}
+```
+
+### 测试结果
+
+**错误信息**:
+
+{err_msg}
+"""
+            elif status == TaskStatus.SUCCESS.value:
+                parsed = DrgResultWithTestCase.model_validate(result)
+                if parsed.test_result is None:
+                    raise HTTPException(status_code=400, detail="Invalid task status to get the result")
+                response = f"""# DRG 测试用例生成及其验证
+
+### 用户输入
+
+```
+{user_input}
+```
+
+### 测试病历
+
+{parsed.medical_record_text}
+
+### 预期结果
+
+**MDC 分组**: {parsed.expected_result.mdc}
+
+**ADRG 分组**: {parsed.expected_result.adrg}
+
+**最终 DRG 组**: {parsed.expected_result.drg}
+
+**并发症/合并症等级**: {parsed.expected_result.complication}
+
+**入组理由**:
+
+{parsed.expected_result.reason}
+
+### 测试结果
+
+**MDC 分组**: {parsed.test_result.mdc}
+
+**ADRG 分组**: {parsed.test_result.adrg}
+
+**最终 DRG 组**: {parsed.test_result.drg}
+
+**并发/合并症等级**: {parsed.test_result.complication}
+
+**入组理由**:
+
+{parsed.test_result.reason}
 """
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid task status '{status}' to get the result")
         else:
-            result = DrgResult.model_validate(result)
-            if status == TaskStatus.SUCCESS.value:
-                response = f"""# DRG 入组结果报告
-
-### 用户输入
-
-```
-{user_input}
-```
-
-### 入组结果
-
-**MDC 分组**：{result.mdc}
-
-**ADRG 分组**：{result.adrg}
-
-**最终 DRG 组**：{result.drg}
-
-**并发症/合并症等级**：{result.complication}
-
-**入组理由**：
-
-{result.reason}
-"""
-            elif status == TaskStatus.FAILED.value:
+            if status == TaskStatus.FAILED.value:
                 response = f"""# DRG 入组结果报告
 
 ### 用户输入
@@ -288,6 +288,30 @@ async def get_task_result_stream(
 **错误信息**:
 
 {err_msg}
+"""
+            elif status == TaskStatus.SUCCESS.value:
+                parsed = DrgResult.model_validate(result)
+                response = f"""# DRG 入组结果报告
+
+### 用户输入
+
+```
+{user_input}
+```
+
+### 入组结果
+
+**MDC 分组**：{parsed.mdc}
+
+**ADRG 分组**：{parsed.adrg}
+
+**最终 DRG 组**：{parsed.drg}
+
+**并发症/合并症等级**：{parsed.complication}
+
+**入组理由**：
+
+{parsed.reason}
 """
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid task status '{status}' to get the result")
@@ -337,9 +361,13 @@ async def get_task_result(
         )
         result, err_msg, status, should_generate_test, user_input = query_result.first()
         if should_generate_test:
-            result = DrgResultWithTestCase.model_validate(result)
-            if status == TaskStatus.SUCCESS.value and result.test_result is not None:
-                response = f"""# DRG 测试用例生成及其验证
+            if status == TaskStatus.FAILED.value:
+                try:
+                    parsed = DrgResultWithTestCase.model_validate(result)
+                    has_record = bool(parsed.medical_record_text)
+                    has_expected = bool(parsed.expected_result)
+                    if has_record and has_expected:
+                        response = f"""# DRG 测试用例生成及其验证
 
 ### 用户输入
 
@@ -349,97 +377,93 @@ async def get_task_result(
 
 ### 测试病历
 
-{result.medical_record_text}
+{parsed.medical_record_text}
 
 ### 预期结果
 
-**MDC 分组**: {result.expected_result.mdc}
+**MDC 分组**: {parsed.expected_result.mdc}
 
-**ADRG 分组**: {result.expected_result.adrg}
+**ADRG 分组**: {parsed.expected_result.adrg}
 
-**最终 DRG 组**: {result.expected_result.drg}
+**最终 DRG 组**: {parsed.expected_result.drg}
 
-**并发症/合并症等级**: {result.expected_result.complication}
-
-**入组理由**:
-
-{result.expected_result.reason}
-
-### 测试结果
-
-**MDC 分组**: {result.test_result.mdc}
-
-**ADRG 分组**: {result.test_result.adrg}
-
-**最终 DRG 组**: {result.test_result.drg}
-
-**并发/合并症等级**: {result.test_result.complication}
+**并发症/合并症等级**: {parsed.expected_result.complication}
 
 **入组理由**:
 
-{result.test_result.reason}
-"""
-            elif status == TaskStatus.FAILED.value:
-                response = f"""# DRG 测试用例生成及其验证
-
-### 用户输入
-
-```
-{user_input}
-```
-
-### 测试病历
-
-{result.medical_record_text}
-
-### 预期结果
-
-**MDC 分组**: {result.expected_result.mdc}
-
-**ADRG 分组**: {result.expected_result.adrg}
-
-**最终 DRG 组**: {result.expected_result.drg}
-
-**并发症/合并症等级**: {result.expected_result.complication}
-
-**入组理由**:
-
-{result.expected_result.reason}
+{parsed.expected_result.reason}
 
 ### 测试结果
 
 **错误信息**:
 
 {err_msg}
+"""
+                    else:
+                        raise ValueError
+                except Exception:
+                    response = f"""# DRG 测试用例生成及其验证
+
+### 用户输入
+
+```
+{user_input}
+```
+
+### 测试结果
+
+**错误信息**:
+
+{err_msg}
+"""
+            elif status == TaskStatus.SUCCESS.value:
+                parsed = DrgResultWithTestCase.model_validate(result)
+                if parsed.test_result is None:
+                    raise HTTPException(status_code=400, detail="Invalid task status to get the result")
+                response = f"""# DRG 测试用例生成及其验证
+
+### 用户输入
+
+```
+{user_input}
+```
+
+### 测试病历
+
+{parsed.medical_record_text}
+
+### 预期结果
+
+**MDC 分组**: {parsed.expected_result.mdc}
+
+**ADRG 分组**: {parsed.expected_result.adrg}
+
+**最终 DRG 组**: {parsed.expected_result.drg}
+
+**并发症/合并症等级**: {parsed.expected_result.complication}
+
+**入组理由**:
+
+{parsed.expected_result.reason}
+
+### 测试结果
+
+**MDC 分组**: {parsed.test_result.mdc}
+
+**ADRG 分组**: {parsed.test_result.adrg}
+
+**最终 DRG 组**: {parsed.test_result.drg}
+
+**并发/合并症等级**: {parsed.test_result.complication}
+
+**入组理由**:
+
+{parsed.test_result.reason}
 """
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid task status '{status}' to get the result")
         else:
-            result = DrgResult.model_validate(result)
-            if status == TaskStatus.SUCCESS.value:
-                response = f"""# DRG 入组结果报告
-
-### 用户输入
-
-```
-{user_input}
-```
-
-### 入组结果
-
-**MDC 分组**：{result.mdc}
-
-**ADRG 分组**：{result.adrg}
-
-**最终 DRG 组**：{result.drg}
-
-**并发症/合并症等级**：{result.complication}
-
-**入组理由**：
-
-{result.reason}
-"""
-            elif status == TaskStatus.FAILED.value:
+            if status == TaskStatus.FAILED.value:
                 response = f"""# DRG 入组结果报告
 
 ### 用户输入
@@ -453,6 +477,30 @@ async def get_task_result(
 **错误信息**:
 
 {err_msg}
+"""
+            elif status == TaskStatus.SUCCESS.value:
+                parsed = DrgResult.model_validate(result)
+                response = f"""# DRG 入组结果报告
+
+### 用户输入
+
+```
+{user_input}
+```
+
+### 入组结果
+
+**MDC 分组**：{parsed.mdc}
+
+**ADRG 分组**：{parsed.adrg}
+
+**最终 DRG 组**：{parsed.drg}
+
+**并发症/合并症等级**：{parsed.complication}
+
+**入组理由**：
+
+{parsed.reason}
 """
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid task status '{status}' to get the result")

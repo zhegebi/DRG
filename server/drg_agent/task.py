@@ -74,6 +74,21 @@ MDC代码及其名称定义如下：
 4. 如果病例信息不足以明确区分，选择最接近的候选。
 """
 
+GET_ADRG_SYSTEM_PROMPT = f"""
+你是一个专业的DRG分组专家。你的任务是根据病人的完整病历文本，从多个可能的ADRG(核心疾病诊断相关分组)候选中选择最合理的一个。
+
+ADRG代码及其名称定义如下：
+{chr(10).join([f"- {code}: {name}" for code, name in MDC_ADRG_DRG.adrg.items()])}
+
+规则：
+1. 你会收到一个病例文本和一组候选ADRG代码列表。
+2. 请分析病例中的主要诊断、次要诊断、手术操作、临床表现等信息，判断最匹配的ADRG。
+3. **输出格式必须为JSON**，结构如下：
+   {{"selected_adrg": "ADRG代码"}}
+   只输出这个JSON对象，不要有任何额外文字。
+4. 如果病例信息不足以明确区分，选择最接近的候选。
+"""
+
 SELECT_TEST_CASE_TYPE_SYSTEM_PROMPT = """
 你是一个测试用例类型分类器。根据用户的描述，判断其需要生成的 DRG 测试用例类型。
 
@@ -257,17 +272,31 @@ class Task(BaseModel):
                     {"role": "system", "content": EXTRACT_MEDICAL_RECORD_SYSTEM_PROMPT},
                     {"role": "user", "content": f"请处理以下病历文本：\n{medical_record_text}"},
                 ],
+                stream=True,
+                extra_body={"thinking": {"type": "enabled"}},
                 temperature=0.0,
                 response_format={"type": "json_object"},
             )
+            content = ""
+            is_first_chunk = True  # first chunk append_to_last should be False, others should be True
+            async for chunk in response:
+                if chunk.choices[0].delta.reasoning_content:  # type: ignore
+                    Task.add_log_line(
+                        self.id,
+                        TaskStep.EXTRACT_MEDICAL_RECORD,
+                        chunk.choices[0].delta.reasoning_content,  # type: ignore
+                        append_to_last=not is_first_chunk,
+                    )
+                    is_first_chunk = False
+                else:
+                    content += chunk.choices[0].delta.content or ""
             Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "DeepSeek API成功返回响应")
         except Exception as e:
             logger.exception(f"Error calling DeepSeek API on extract medical record info: {e}")
             raise Exception(f"调用DeepSeek API提取病历信息失败: {e}")
         # 2. parse response
         Task.add_log_line(self.id, TaskStep.EXTRACT_MEDICAL_RECORD, "解析DeepSeek API返回的病历信息")
-        content = response.choices[0].message.content
-        if content is None:
+        if not content.strip():
             logger.exception("Empty response from DeepSeek API on extract medical record info")
             raise Exception("DeepSeek API返回空响应")
         try:
@@ -309,7 +338,7 @@ class Task(BaseModel):
                 病历文本：
                 {medical_record_text}
 
-                可能的MDC候选（请从以下列表中选择）：
+                可能的MDC候选（请从以下列表中选择一个）：
                 {", ".join([f"{code}({MDC_ADRG_DRG.mdc.get(code, '未知')})" for code in mdc_code_list])}
 
                 请输出如下格式的JSON：
@@ -325,12 +354,26 @@ class Task(BaseModel):
                         {"role": "system", "content": GET_MDC_SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt},
                     ],
+                    stream=True,
+                    extra_body={"thinking": {"type": "enabled"}},
                     temperature=0.0,
                     response_format={"type": "json_object"},
                 )
+                content = ""
+                is_first_chunk = True  # first chunk append_to_last should be False, others should be True
+                async for chunk in response:
+                    if chunk.choices[0].delta.reasoning_content:  # type: ignore
+                        Task.add_log_line(
+                            self.id,
+                            TaskStep.GET_MDC_CODE,
+                            chunk.choices[0].delta.reasoning_content,  # type: ignore
+                            append_to_last=not is_first_chunk,
+                        )
+                        is_first_chunk = False
+                    else:
+                        content += chunk.choices[0].delta.content or ""
                 Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, "DeepSeek API成功返回响应, 开始解析")
-                content = response.choices[0].message.content
-                if content is None:
+                if not content.strip():
                     logger.warning(f"cannot choose MDC code from {mdc_code_list}, use default {mdc_code_list[0]}")
                     Task.add_log_line(self.id, TaskStep.GET_MDC_CODE, "DeepSeek API返回空响应, 使用第一个MDC代码")
                     Task.mark_step_done(self.id, TaskStep.GET_MDC_CODE)
@@ -351,7 +394,7 @@ class Task(BaseModel):
                 raise Exception(f"无法选择MDC代码: {e}")
 
     # step 3: get ADRG code
-    def _get_adrg_code(self, medical_record: MedicalRecord, mdc_code: str) -> str:
+    async def _get_adrg_code(self, medical_record_text: str, medical_record: MedicalRecord, mdc_code: str) -> str:
         logger.info(f"getting ADRG code from medical record, task_id: {self.id}")
         Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, "开始从病历信息中提取ADRG代码")
         # 1.get primary procedure code
@@ -369,13 +412,85 @@ class Task(BaseModel):
         if adrg_code_list is None or len(adrg_code_list) == 0:
             logger.exception(f"cannot find ADRG code for procedure {primary_procedure_code}")
             raise ValueError(f"无法找到主要手术 {primary_procedure_code} 的ADRG代码")
+        adrg_code_candidate: list[str] = []
         for result in adrg_code_list:
             if result.mdc_code == mdc_code:
-                Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, f"成功提取ADRG代码: {result.adrg_code}")
-                Task.mark_step_done(self.id, TaskStep.GET_ADRG_CODE)
-                return result.adrg_code
-        logger.exception(f"cannot find ADRG code for MDC {mdc_code} and procedure {primary_procedure_code}")
-        raise ValueError(f"无法找到 MDC {mdc_code} 和主要手术 {primary_procedure_code} 的ADRG代码")
+                Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, f"提取到ADRG代码候选: {result.adrg_code}")
+                adrg_code_candidate.append(result.adrg_code)
+        if len(adrg_code_candidate) == 0:
+            logger.exception(f"cannot find ADRG code for MDC {mdc_code} and procedure {primary_procedure_code}")
+            raise ValueError(f"无法找到 MDC {mdc_code} 和主要手术 {primary_procedure_code} 的ADRG代码")
+        elif len(adrg_code_candidate) == 1:
+            Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, f"成功提取ADRG代码: {adrg_code_candidate[0]}")
+            Task.mark_step_done(self.id, TaskStep.GET_ADRG_CODE)
+            return adrg_code_candidate[0]
+        else:
+            Task.add_log_line(
+                self.id, TaskStep.GET_ADRG_CODE, "提取到多个ADRG代码候选, 准备调用DeepSeek API选择ADRG代码"
+            )
+            try:
+                user_prompt = f"""
+                病历文本:
+                {medical_record_text}
+                可能的ADRG代码候选(请从以下列表中选择一个):
+                {", ".join([f"{code}({MDC_ADRG_DRG.adrg.get(code, '未知')})" for code in adrg_code_candidate])}
+                请输出如下格式的JSON：
+                {{"selected_adrg": "ADRG代码"}}
+                """
+
+                class AdrgResponse(BaseModel):
+                    selected_adrg: str
+
+                response = await client.chat.completions.create(
+                    model="deepseek-v4-pro",
+                    messages=[
+                        {"role": "system", "content": GET_ADRG_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    stream=True,
+                    extra_body={"thinking": {"type": "enabled"}},
+                    temperature=0.0,
+                    response_format={"type": "json_object"},
+                )
+                content = ""
+                is_first_chunk = True  # first chunk append_to_last should be False, others should be True
+                async for chunk in response:
+                    if chunk.choices[0].delta.reasoning_content:  # type: ignore
+                        Task.add_log_line(
+                            self.id,
+                            TaskStep.GET_ADRG_CODE,
+                            chunk.choices[0].delta.reasoning_content,  # type: ignore
+                            append_to_last=not is_first_chunk,
+                        )
+                        is_first_chunk = False
+                    else:
+                        content += chunk.choices[0].delta.content or ""
+                Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, "DeepSeek API成功返回响应, 开始解析")
+                if not content.strip():
+                    logger.warning(
+                        f"cannot choose ADRG code from {adrg_code_candidate}, use default {adrg_code_candidate[0]}"
+                    )
+                    Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, "DeepSeek API返回空响应, 使用第一个候选ADRG代码")
+                    Task.mark_step_done(self.id, TaskStep.GET_ADRG_CODE)
+                    return adrg_code_candidate[0]
+                data = AdrgResponse.model_validate_json(content)
+                chosen = data.selected_adrg.strip()
+                if chosen in adrg_code_candidate:
+                    Task.add_log_line(self.id, TaskStep.GET_ADRG_CODE, f"成功选择ADRG代码: {chosen}")
+                    Task.mark_step_done(self.id, TaskStep.GET_ADRG_CODE)
+                    return chosen
+                else:
+                    logger.warning(
+                        f"cannot choose ADRG code from {adrg_code_candidate}, use default {adrg_code_candidate[0]}"
+                    )
+                    Task.add_log_line(
+                        self.id, TaskStep.GET_ADRG_CODE, "DeepSeek API返回无效ADRG代码, 使用第一个候选ADRG代码"
+                    )
+                    Task.mark_step_done(self.id, TaskStep.GET_ADRG_CODE)
+                    return adrg_code_candidate[0]
+            except Exception as e:
+                logger.exception(f"Error getting ADRG code: {e}")
+                raise Exception(f"无法选择ADRG代码: {e}")
 
     # step 4: get MCC and CC level
     def _get_mcc_cc_level(self, medical_record: MedicalRecord) -> Literal["cc", "mcc", "no"]:
@@ -662,7 +777,7 @@ class Task(BaseModel):
                 self.status = TaskStatus.RUNNING
                 medical_record = await self._extract_medical_record_info(medical_record_text)
                 mdc_code = await self._get_mdc_code(medical_record_text, medical_record)
-                adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                adrg_code = await self._get_adrg_code(medical_record_text, medical_record, mdc_code)
                 mcc_cc_level = self._get_mcc_cc_level(medical_record)
                 drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
                 final_result = self._get_final_result(
@@ -692,7 +807,7 @@ class Task(BaseModel):
                     await asyncio.sleep(0.2)
                     mdc_code = await self._get_mdc_code(medical_record_text, medical_record)
                     await asyncio.sleep(0.2)
-                    adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                    adrg_code = await self._get_adrg_code(medical_record_text, medical_record, mdc_code)
                     await asyncio.sleep(0.2)
                     mcc_cc_level = self._get_mcc_cc_level(medical_record)
                     await asyncio.sleep(0.2)
@@ -746,7 +861,7 @@ class Task(BaseModel):
                 )
                 medical_record = await self._extract_medical_record_info(test_case.medical_record_text)
                 mdc_code = await self._get_mdc_code(test_case.medical_record_text, medical_record)
-                adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                adrg_code = await self._get_adrg_code(test_case.medical_record_text, medical_record, mdc_code)
                 mcc_cc_level = self._get_mcc_cc_level(medical_record)
                 drg_code, drg_name = self._get_drg_code_and_name(adrg_code, mcc_cc_level)
                 final_result = self._get_final_result(
@@ -791,7 +906,7 @@ class Task(BaseModel):
                     await asyncio.sleep(0.2)
                     mdc_code = await self._get_mdc_code(test_case.medical_record_text, medical_record)
                     await asyncio.sleep(0.2)
-                    adrg_code = self._get_adrg_code(medical_record, mdc_code)
+                    adrg_code = await self._get_adrg_code(test_case.medical_record_text, medical_record, mdc_code)
                     await asyncio.sleep(0.2)
                     mcc_cc_level = self._get_mcc_cc_level(medical_record)
                     await asyncio.sleep(0.2)
