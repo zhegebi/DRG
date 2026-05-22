@@ -192,7 +192,7 @@ async def refresh_access_token(
         # create Access Token
         new_access_token = AuthUtils.create_access_token({"sub": user_id})
 
-        return TokenResponse(access_token=new_access_token)
+        return TokenResponse(access_token=new_access_token, username=user.username, email=user.email)
 
     except HTTPException:
         raise

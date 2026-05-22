@@ -1,23 +1,25 @@
 <template>
   <div class="home">
-    <div class="sections-container" ref="containerRef" @wheel="handleWheel">
-      <Section1Hero />
-      <Section2Features />
-      <Section3Tutorial />
-      <Section4Templates />
-      <Section5FileBank />
-      <Section6Deploy />
-      <Section7CTA />
+    <div class="sections-container" ref="containerRef">
+      <Section1Hero :observer="observeSection" />
+      <Section2Features :observer="observeSection" />
+      <Section3Tutorial :observer="observeSection" />
+      <Section4Templates :observer="observeSection" />
+      <Section5FileBank :observer="observeSection" />
+      <Section6Deploy :observer="observeSection" />
+      <Section7CTA :observer="observeSection" />
     </div>
 
     <div class="scroll-progress">
-      <div 
-        v-for="(_, index) in 7" 
+      <div
+        v-for="(_, index) in 7"
         :key="index"
         class="progress-dot"
         :class="{ active: currentSection === index }"
         @click="scrollToSection(index)"
-      ></div>
+      >
+        <div class="dot-inner"></div>
+      </div>
     </div>
   </div>
 </template>
@@ -35,52 +37,58 @@ import Section7CTA from './Section7CTA.vue'
 const containerRef = ref<HTMLElement>()
 const currentSection = ref(0)
 const totalSections = 7
-let isScrolling = false
 
+// 滚动到指定区块
 const scrollToSection = (index: number) => {
-  if (index < 0 || index >= totalSections || isScrolling) return
-  isScrolling = true
-  currentSection.value = index
+  if (index < 0 || index >= totalSections) return
   const sections = containerRef.value?.children
   if (sections && sections[index]) {
     (sections[index] as HTMLElement).scrollIntoView({ behavior: 'smooth' })
   }
-  setTimeout(() => {
-    isScrolling = false
-  }, 500)
 }
 
-const handleWheel = (e: WheelEvent) => {
-  if (isScrolling) return
-  if (e.deltaY > 0 && currentSection.value < totalSections - 1) {
-    scrollToSection(currentSection.value + 1)
-  } else if (e.deltaY < 0 && currentSection.value > 0) {
-    scrollToSection(currentSection.value - 1)
-  }
-}
-
+// 监听滚动更新进度点
 const handleScroll = () => {
-  if (isScrolling) return
   const container = containerRef.value
   if (!container) return
   const sections = Array.from(container.children)
   const scrollTop = container.scrollTop
   const viewportHeight = window.innerHeight
-  
+
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i] as HTMLElement
     const sectionTop = section.offsetTop
-    if (scrollTop >= sectionTop - viewportHeight / 3) {
+    const threshold = i === 0 ? 0 : viewportHeight * 0.4
+    if (scrollTop >= sectionTop - threshold) {
       currentSection.value = i
     }
   }
 }
+
+// IntersectionObserver：给可见区块添加 .visible 类
+const observeSection = (el: HTMLElement | null) => {
+  if (!el) return
+  observerRef.value?.observe(el)
+}
+
+const observerRef = ref<IntersectionObserver | null>(null)
 
 onMounted(() => {
   const container = containerRef.value
   if (container) {
     container.addEventListener('scroll', handleScroll)
   }
+
+  observerRef.value = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible')
+        }
+      })
+    },
+    { threshold: 0.15 }
+  )
 })
 
 onUnmounted(() => {
@@ -88,52 +96,75 @@ onUnmounted(() => {
   if (container) {
     container.removeEventListener('scroll', handleScroll)
   }
+  observerRef.value?.disconnect()
 })
 </script>
 
 <style lang="scss" scoped>
 @use "@/common/global.scss" as *;
+
 .home {
   width: 100%;
   min-height: calc(100vh - $control-bar-height);
-  background: #f8fafc;
+  background: $bg-page;
+  position: relative;
 }
 
 .sections-container {
   height: calc(100vh - $control-bar-height);
   overflow-y: scroll;
   overflow-x: hidden;
-  scroll-behavior: smooth;
   scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 2px;
+  }
 }
 
-.sections-container::-webkit-scrollbar {
-  width: 6px;
-}
-
+/* 滚动进度点 */
 .scroll-progress {
   position: fixed;
-  right: 20px;
+  right: 24px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  z-index: 1000;
+  gap: 12px;
+  z-index: 100;
 }
 
 .progress-dot {
-  width: 8px;
-  height: 8px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: all 0.3s;
-}
+  position: relative;
 
-.progress-dot.active {
-  width: 20px;
-  border-radius: 4px;
-  background: #007fd4;
+  .dot-inner {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.18);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  &:hover .dot-inner {
+    background: rgba(0, 0, 0, 0.35);
+    transform: scale(1.3);
+  }
+
+  &.active .dot-inner {
+    width: 10px;
+    height: 10px;
+    background: $primary;
+    box-shadow: 0 0 8px rgba($primary, 0.4);
+  }
 }
 </style>

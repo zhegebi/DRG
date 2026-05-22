@@ -29,7 +29,6 @@ const showUserCard = ref(false);
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 
 function onUserMouseEnter() {
-  if (!isLoggedIn.value) return;
   if (hoverTimer) clearTimeout(hoverTimer);
   hoverTimer = setTimeout(() => {
     showUserCard.value = true;
@@ -86,9 +85,7 @@ async function handleLogout() {
 
 // 点击用户图标
 function handleUserClick() {
-  if (isLoggedIn.value) {
-    handleLogout();
-  } else {
+  if (!isLoggedIn.value) {
     handleLogin();
   }
 }
@@ -173,7 +170,7 @@ const isActive = (item: typeof navItems[0]) => {
           @mouseenter="onUserMouseEnter"
           @mouseleave="onUserMouseLeave"
         >
-          <div class="user-icon" @click="handleUserClick" :title="isLoggedIn ? '点击退出登录' : '点击登录'">
+          <div class="user-icon" @click="handleUserClick" :title="isLoggedIn ? '用户信息' : '点击登录'">
             <template v-if="isLoggedIn">
               <span class="user-avatar">{{ avatarLetter }}</span>
             </template>
@@ -182,34 +179,58 @@ const isActive = (item: typeof navItems[0]) => {
 
           <!-- 悬浮用户信息卡片 -->
           <Transition name="card-fade">
-            <div v-if="showUserCard && isLoggedIn" class="user-card" @mouseenter="onCardMouseEnter" @mouseleave="onCardMouseLeave">
-              <div class="card-header">
-                <span class="card-avatar">{{ avatarLetter }}</span>
-                <div class="card-user-info">
-                  <span class="card-display-name">{{ displayName }}</span>
-                  <span class="card-status">已登录</span>
+            <div v-if="showUserCard" class="user-card" @mouseenter="onCardMouseEnter" @mouseleave="onCardMouseLeave">
+              <!-- 已登录 -->
+              <template v-if="isLoggedIn">
+                <div class="card-header">
+                  <span class="card-avatar">{{ avatarLetter }}</span>
+                  <div class="card-user-info">
+                    <span class="card-display-name">{{ displayName }}</span>
+                    <span class="card-status">已登录</span>
+                  </div>
                 </div>
-              </div>
-              <div class="card-body">
-                <div class="card-row" v-if="currentUser?.username">
-                  <SvgIcon type="mdi" :path="mdiAccountOutline" class="row-icon" />
-                  <span>{{ currentUser.username }}</span>
+                <div class="card-body">
+                  <div class="card-row" v-if="currentUser?.username">
+                    <SvgIcon type="mdi" :path="mdiAccountOutline" class="row-icon" />
+                    <span>{{ currentUser.username }}</span>
+                  </div>
+                  <div class="card-row" v-if="currentUser?.email">
+                    <SvgIcon type="mdi" :path="mdiEmailOutline" class="row-icon" />
+                    <span>{{ currentUser.email }}</span>
+                  </div>
+                  <div class="card-row" v-if="currentUser?.id">
+                    <SvgIcon type="mdi" :path="mdiIdentifier" class="row-icon" />
+                    <span>ID: {{ currentUser.id }}</span>
+                  </div>
                 </div>
-                <div class="card-row" v-if="currentUser?.email">
-                  <SvgIcon type="mdi" :path="mdiEmailOutline" class="row-icon" />
-                  <span>{{ currentUser.email }}</span>
+                <div class="card-footer">
+                  <button class="logout-btn" @click="handleLogout">
+                    <SvgIcon type="mdi" :path="mdiLogout" class="logout-icon" />
+                    退出登录
+                  </button>
                 </div>
-                <div class="card-row" v-if="currentUser?.id">
-                  <SvgIcon type="mdi" :path="mdiIdentifier" class="row-icon" />
-                  <span>ID: {{ currentUser.id }}</span>
+              </template>
+              <!-- 未登录 -->
+              <template v-else>
+                <div class="card-header">
+                  <div class="card-avatar guest-avatar">
+                    <SvgIcon type="mdi" :path="mdiAccountCircle" class="guest-avatar-icon" />
+                  </div>
+                  <div class="card-user-info">
+                    <span class="card-display-name">未登录</span>
+                    <span class="card-status status-guest">请登录后使用</span>
+                  </div>
                 </div>
-              </div>
-              <div class="card-footer">
-                <button class="logout-btn" @click="handleLogout">
-                  <SvgIcon type="mdi" :path="mdiLogout" class="logout-icon" />
-                  退出登录
-                </button>
-              </div>
+                <div class="card-body">
+                  <p class="guest-tip">登录后可体验 DRG 入组、文档生成等完整功能</p>
+                </div>
+                <div class="card-footer">
+                  <button class="login-btn" @click="handleLogin">
+                    <SvgIcon type="mdi" :path="mdiAccountCircle" class="login-icon" />
+                    立即登录
+                  </button>
+                </div>
+              </template>
             </div>
           </Transition>
         </div>
@@ -530,6 +551,58 @@ const isActive = (item: typeof navItems[0]) => {
 }
 
 .logout-icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* 未登录状态 */
+.guest-avatar {
+  background: linear-gradient(135deg, #94a3b8, #cbd5e1) !important;
+}
+
+.guest-avatar-icon {
+  width: 22px;
+  height: 22px;
+  fill: white;
+}
+
+.status-guest {
+  color: #94a3b8 !important;
+}
+
+.guest-tip {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 4px 0;
+  text-align: center;
+}
+
+.login-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #007fd4, #0099ff);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 127, 212, 0.25);
+}
+
+.login-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 127, 212, 0.35);
+}
+
+.login-icon {
   width: 16px;
   height: 16px;
   fill: currentColor;
