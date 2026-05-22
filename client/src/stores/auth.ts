@@ -30,9 +30,34 @@ const decodeToken = (token: string): { sub?: string } | null => {
   }
 };
 
+const STORAGE_TOKEN_KEY = 'access_token';
+const STORAGE_USER_KEY = 'user_info';
+
+// 从 localStorage 恢复用户信息
+function loadStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_USER_KEY);
+    if (!raw) return decodeTokenUser();
+    return JSON.parse(raw) as User;
+  } catch {
+    return decodeTokenUser();
+  }
+}
+
+// 从 token 中解码用户 ID（备用，当 user_info 不存在时）
+function decodeTokenUser(): User | null {
+  const token = localStorage.getItem(STORAGE_TOKEN_KEY);
+  if (!token) return null;
+  const decoded = decodeToken(token);
+  if (decoded?.sub) {
+    return { id: parseInt(decoded.sub) };
+  }
+  return null;
+}
+
 export const useAuthStore = defineStore('auth', () => {
-  const accessToken = ref<string | null>(localStorage.getItem('access_token'));
-  const user = ref<User | null>(null);
+  const accessToken = ref<string | null>(localStorage.getItem(STORAGE_TOKEN_KEY));
+  const user = ref<User | null>(loadStoredUser());
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
@@ -41,14 +66,16 @@ export const useAuthStore = defineStore('auth', () => {
   // 设置认证状态
   const setAuth = (token: string, userData?: User) => {
     accessToken.value = token;
-    localStorage.setItem('access_token', token);
-    
+    localStorage.setItem(STORAGE_TOKEN_KEY, token);
+
     if (userData) {
       user.value = userData;
+      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(userData));
     } else {
       const decoded = decodeToken(token);
       if (decoded?.sub) {
         user.value = { id: parseInt(decoded.sub) };
+        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({ id: parseInt(decoded.sub) }));
       }
     }
   };
@@ -56,7 +83,8 @@ export const useAuthStore = defineStore('auth', () => {
   // 清除认证状态
   const clearAuth = () => {
     accessToken.value = null;
-    localStorage.removeItem('access_token');
+    localStorage.removeItem(STORAGE_TOKEN_KEY);
+    localStorage.removeItem(STORAGE_USER_KEY);
     user.value = null;
   };
 
@@ -83,7 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
       const data = result.data as any;
       if (data && data.access_token) {
         console.log('【真实登录】登录成功');
-        setAuth(data.access_token);
+        setAuth(data.access_token, { username: data.username, email: data.email });
         return true;
       }
       
@@ -125,7 +153,7 @@ export const useAuthStore = defineStore('auth', () => {
       const data = result.data as any;
       if (data && data.access_token) {
         console.log('【真实注册】注册成功', { username, email });
-        setAuth(data.access_token);
+        setAuth(data.access_token, { username: data.username, email: data.email });
         return true;
       }
       
@@ -156,7 +184,7 @@ export const useAuthStore = defineStore('auth', () => {
       const data = result.data as any;
       if (data && data.access_token) {
         accessToken.value = data.access_token;
-        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem(STORAGE_TOKEN_KEY, data.access_token);
         return true;
       }
       return false;

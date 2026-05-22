@@ -361,6 +361,14 @@ export type TokenResponse = {
      * Token Type
      */
     token_type?: string;
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Email
+     */
+    email: string;
 };
 
 /**

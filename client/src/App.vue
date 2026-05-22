@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 import ControlBar from './ControlBar.vue';
 
+const route = useRoute();
+const showControlBar = computed(() => route.name !== 'auth');
 </script>
 <template>
     <div class="app-container">
-        <ControlBar></ControlBar>
+        <ControlBar v-if="showControlBar"></ControlBar>
         <RouterView></RouterView>
     </div>
 </template>

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed } from "vue";
+import { ref, computed } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import SvgIcon from "@jamescoyle/vue-icon";
 import {
@@ -10,6 +10,9 @@ import {
   mdiFileDocumentOutline,
   mdiLogout,
   mdiAccountCircle,
+  mdiEmailOutline,
+  mdiAccountOutline,
+  mdiIdentifier,
 } from "@mdi/js";
 import { useAuthStore } from "@/stores/auth";
 
@@ -20,6 +23,48 @@ const authStore = useAuthStore();
 // 计算属性：是否已登录
 const isLoggedIn = computed(() => authStore.isAuthenticated);
 const currentUser = computed(() => authStore.user);
+
+// 悬浮卡片控制
+const showUserCard = ref(false);
+let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onUserMouseEnter() {
+  if (!isLoggedIn.value) return;
+  if (hoverTimer) clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => {
+    showUserCard.value = true;
+  }, 200);
+}
+
+function onUserMouseLeave() {
+  if (hoverTimer) clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => {
+    showUserCard.value = false;
+  }, 300);
+}
+
+function onCardMouseEnter() {
+  if (hoverTimer) clearTimeout(hoverTimer);
+  showUserCard.value = true;
+}
+
+function onCardMouseLeave() {
+  showUserCard.value = false;
+}
+
+// 显示名称
+const displayName = computed(() => {
+  const u = currentUser.value;
+  if (u?.displayName) return u.displayName;
+  if (u?.username) return u.username;
+  if (u?.id) return `用户 #${u.id}`;
+  return '未知用户';
+});
+
+// 头像首字母
+const avatarLetter = computed(() => {
+  return displayName.value.charAt(0).toUpperCase();
+});
 
 function jumpToGithub() {
   window.open('https://github.com/zhegebi/DRG', '_blank');
@@ -123,12 +168,50 @@ const isActive = (item: typeof navItems[0]) => {
         </button>
         
         <!-- 用户图标：未登录显示登录图标，已登录显示登出图标 -->
-        <div class="user-icon" @click="handleUserClick" :title="isLoggedIn ? '点击退出登录' : '点击登录'">
-          <SvgIcon 
-            type="mdi" 
-            :path="isLoggedIn ? mdiLogout : mdiAccountCircle" 
-            class="user-icon-svg"
-          />
+        <div
+          class="user-icon-wrapper"
+          @mouseenter="onUserMouseEnter"
+          @mouseleave="onUserMouseLeave"
+        >
+          <div class="user-icon" @click="handleUserClick" :title="isLoggedIn ? '点击退出登录' : '点击登录'">
+            <template v-if="isLoggedIn">
+              <span class="user-avatar">{{ avatarLetter }}</span>
+            </template>
+            <SvgIcon v-else type="mdi" :path="mdiAccountCircle" class="user-icon-svg" />
+          </div>
+
+          <!-- 悬浮用户信息卡片 -->
+          <Transition name="card-fade">
+            <div v-if="showUserCard && isLoggedIn" class="user-card" @mouseenter="onCardMouseEnter" @mouseleave="onCardMouseLeave">
+              <div class="card-header">
+                <span class="card-avatar">{{ avatarLetter }}</span>
+                <div class="card-user-info">
+                  <span class="card-display-name">{{ displayName }}</span>
+                  <span class="card-status">已登录</span>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="card-row" v-if="currentUser?.username">
+                  <SvgIcon type="mdi" :path="mdiAccountOutline" class="row-icon" />
+                  <span>{{ currentUser.username }}</span>
+                </div>
+                <div class="card-row" v-if="currentUser?.email">
+                  <SvgIcon type="mdi" :path="mdiEmailOutline" class="row-icon" />
+                  <span>{{ currentUser.email }}</span>
+                </div>
+                <div class="card-row" v-if="currentUser?.id">
+                  <SvgIcon type="mdi" :path="mdiIdentifier" class="row-icon" />
+                  <span>ID: {{ currentUser.id }}</span>
+                </div>
+              </div>
+              <div class="card-footer">
+                <button class="logout-btn" @click="handleLogout">
+                  <SvgIcon type="mdi" :path="mdiLogout" class="logout-icon" />
+                  退出登录
+                </button>
+              </div>
+            </div>
+          </Transition>
         </div>
       </div>
     </div>
@@ -287,6 +370,12 @@ const isActive = (item: typeof navItems[0]) => {
 }
 
 /* 用户图标样式 */
+.user-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .user-icon {
   width: 34px;
   height: 34px;
@@ -307,5 +396,161 @@ const isActive = (item: typeof navItems[0]) => {
   width: 22px;
   height: 22px;
   fill: currentColor;
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #007fd4, #00a8ff);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  user-select: none;
+}
+
+/* ===== 悬浮用户信息卡片 ===== */
+.user-card {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 260px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  z-index: 1200;
+  overflow: hidden;
+}
+
+.user-card::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  transform: rotate(45deg);
+  box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.04);
+  border-radius: 2px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.card-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #007fd4, #00a8ff);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.card-user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.card-display-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a1a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-status {
+  font-size: 12px;
+  color: #52c41a;
+  margin-top: 2px;
+}
+
+.card-body {
+  padding: 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #555;
+}
+
+.row-icon {
+  width: 16px;
+  height: 16px;
+  fill: #999;
+  flex-shrink: 0;
+}
+
+.card-footer {
+  padding: 12px 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.logout-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #ff4d4f;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.logout-btn:hover {
+  background: #fff2f0;
+}
+
+.logout-icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* 卡片动画 */
+.card-fade-enter-active {
+  transition: all 0.2s ease-out;
+}
+
+.card-fade-leave-active {
+  transition: all 0.15s ease-in;
+}
+
+.card-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.card-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

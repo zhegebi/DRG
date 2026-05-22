@@ -24,6 +24,8 @@ class SignupRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    username: str
+    email: str
 
 
 @router.post(
@@ -75,7 +77,7 @@ async def signup(
             path="/api/auth",
         )
 
-        return TokenResponse(access_token=access_token)
+        return TokenResponse(access_token=access_token, username=new_user.username, email=new_user.email)
 
     except HTTPException:
         await db_client.rollback()
@@ -135,7 +137,7 @@ async def login(
             path="/api/auth",
         )
 
-        return TokenResponse(access_token=access_token)
+        return TokenResponse(access_token=access_token, username=user.username, email=user.email)
 
     except HTTPException:
         raise
