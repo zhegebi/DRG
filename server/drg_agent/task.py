@@ -111,17 +111,18 @@ GENERATE_TEST_CASE_SYSTEM_PROMPT = f"""
 你是一个专业的 DRG 分组测试用例生成器。你必须根据以下规则，生成一个包含随机病历和该病历预期 DRG 入组结果的测试用例。
 
 重要提醒：
-- 输出中一定要标明主诊断和主要手术。
+- 输出中一定要明确标明主诊断、次要诊断、主要手术、其他手术这四个信息（比如主要手术: "手术名称(手术编号)"这样的）。
 - 所有疾病名称和手术名称必须严格从上面提供的列表中选取。
 - 主诊断必须能通过第3条规则映射到一个MDC（即在上面的诊断->MDC列表中有定义）。
 - 主要手术必须在第4条规则中，针对所选MDC存在对应的ADRG。
 - 预期结果必须严格按照上述 DRG 分组规则计算得出，不能随意编造。
 - 输出必须是纯 JSON 格式，不要有其他解释文字。
-- "medical_record_text" 字段后面是一个字符串类型，不要写成其他类型了。
-- 你可能会被要求生成三种情况的测试用例：正常情况（指的是常规的、符合典型规则的诊断与手术组合，不刻意制造边缘情况或错误）、
+- "medical_record_text" 字段后面是一个字符串类型，不要写成其他类型。
+- 你仅会被要求生成以下三种情况的测试用例：
+  正常情况（指的是常规的、符合典型规则的诊断与手术组合，不刻意制造边缘情况或错误）、
   边界情况（重点在于测试 MCC/CC 排除表逻辑、疾病编码正好落在排除表中导致等级变化的场景）、
   异常情况（故意包含编码错误、信息缺失（例如缺少主诊断或主要手术）、不存在的编码组合等非法情况）。
-  如果被要求这么做了，请不要生成错对应的情况。
+  请不要生成错对应的情况。
 - 如果你被要求输入一个异常情况的测试用例，expected_result中的mdc、adrg、drg填abnormal，complication直接填no，reason填异常情况的描述。
 
 ## 1. 可用的诊断（名称与编码）
@@ -670,44 +671,46 @@ class Task(BaseModel):
             raise Exception(f"选择测试用例类型失败, {e}")
 
     # step 2: generate test case
-    async def _generate_test_case(self, test_case_type: Literal["normal", "boundary", "abnormal"]) -> DrgTestCase:
+    async def _generate_test_case(
+        self, user_input: str, test_case_type: Literal["normal", "boundary", "abnormal"]
+    ) -> DrgTestCase:
         logger.info(f"generating test case, task_id: {self.id}")
         Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, "开始根据测试用例类型生成测试用例")
         # 1. add random factors to the test case
         Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, f"为{test_case_type}测试用例类型生成测试用例的随机因素")
-        primary_diagnosis = random.choice(list(NAME_TO_CODE_TEST.diagnosis.keys()))
+        diagnosis_keyword = random.choice(list(NAME_TO_CODE_TEST.diagnosis.keys()))
         if test_case_type == "normal":
             secondary_diagnosis_num = random.randint(0, 4)
             other_procedures_num = random.randint(0, 3)
             logger.info(
-                f"randomly selected primary diagnosis: {primary_diagnosis}, secondary diagnosis num: {secondary_diagnosis_num} and other procedures num: {other_procedures_num}"
+                f"randomly selected diagnosis keyword: {diagnosis_keyword}, secondary diagnosis num: {secondary_diagnosis_num} and other procedures num: {other_procedures_num}"
             )
             Task.add_log_line(
                 self.id,
                 TaskStep.GENERATE_TEST_CASE,
-                f"随机选择主诊断 {primary_diagnosis}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术，以增加测试用例的随机性。",
+                f"随机选择关键字 {diagnosis_keyword}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术，以增加测试用例的随机性。",
             )
         elif test_case_type == "boundary":
             all_exclusion_table_list = list(MCC_AND_CC_TEST.exclusion_tables.values())
             combined_diag_codes = [code for code_list in all_exclusion_table_list for code in code_list]
             random_diag_code = random.choice(combined_diag_codes)
-            primary_diagnosis = DIAG_CODE_TO_NAME_TEST.get(random_diag_code, "心力衰竭")
+            diagnosis_keyword = DIAG_CODE_TO_NAME_TEST.get(random_diag_code, "心力衰竭")
             secondary_diagnosis_num = random.randint(1, 4)
             other_procedures_num = random.randint(0, 3)
             logger.info(
-                f"randomly selected primary diagnosis: {primary_diagnosis}, secondary diagnosis num: {secondary_diagnosis_num} and other procedures num: {other_procedures_num}"
+                f"randomly selected diagnosis keyword: {diagnosis_keyword}, secondary diagnosis num: {secondary_diagnosis_num} and other procedures num: {other_procedures_num}"
             )
             Task.add_log_line(
                 self.id,
                 TaskStep.GENERATE_TEST_CASE,
-                f"随机选择主诊断 {primary_diagnosis}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术，以增加测试用例的随机性。",
+                f"随机选择关键字 {diagnosis_keyword}，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术，以增加测试用例的随机性。",
             )
         elif test_case_type == "abnormal":
-            logger.info(f"randomly selected keyword: {primary_diagnosis}")
+            logger.info(f"randomly selected diagnosis keyword: {diagnosis_keyword}")
             Task.add_log_line(
                 self.id,
                 TaskStep.GENERATE_TEST_CASE,
-                f"随机选择关键字 {primary_diagnosis}，以增加测试用例的随机性。",
+                f"随机选择关键字 {diagnosis_keyword}，以增加测试用例的随机性。",
             )
         # 2. write test case prompt
         Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, "编写测试用例提示词")
@@ -716,19 +719,28 @@ class Task(BaseModel):
                 test_case_prompt = f"""
                 请生成一个随机但符合规则的正常场景测试用例
                 （指的是常规的、符合典型规则的诊断与手术组合，不刻意制造边缘情况或错误。）
-                但是主诊断必须是 {primary_diagnosis}，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
+                以下是约束条件：
+                测试用例要尽量与 {diagnosis_keyword} 相关，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
+                以下是用户提供的信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的为准，但是不能改变生成正常场景测试用例的大前提。如果用户提供的信息无法让你生成正常场景的测试用例，就选择性地忽略那些影响生成正常场景的测试用例的信息）：
+                {user_input}
                 """
             case "boundary":
                 test_case_prompt = f"""
                 请生成一个随机但符合规则的边界测试用例
                 （重点在于测试 MCC/CC 排除表逻辑、疾病编码正好落在排除表中导致等级变化的场景。）
-                但是主诊断必须是 {primary_diagnosis}，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
+                以下是约束条件：
+                测试用例要尽量与 {diagnosis_keyword} 相关，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
+                以下是用户提供的信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的为准，但是不能改变生成边界测试用例的大前提。如果用户提供的信息无法让你生成边界测试用例，就选择性地忽略那些影响生成边界测试用例的信息）：
+                {user_input}
                 """
             case "abnormal":
                 test_case_prompt = f"""
                 请生成一个随机但符合规则的异常场景测试用例
                 （故意包含编码错误、信息缺失（例如缺少主诊断或主要手术）、不存在的编码组合等非法情况。）
-                尽量与 {primary_diagnosis} 相关。
+                以下是约束条件：
+                测试用例要尽量与 {diagnosis_keyword} 相关。
+                以下是用户提供的信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的为准，但是不能改变生成异常场景测试用例的大前提。如果用户提供的信息无法让你生成异常场景的测试用例，就选择性地忽略那些影响生成异常场景的测试用例的信息）：
+                {user_input}
                 """
         # 3. call deepseek api to generate test case
         Task.add_log_line(self.id, TaskStep.GENERATE_TEST_CASE, "调用deepseek api生成测试用例")
@@ -855,7 +867,7 @@ class Task(BaseModel):
             try:
                 self.status = TaskStatus.RUNNING
                 test_case_type = await self._select_test_case_type(user_input)
-                test_case = await self._generate_test_case(test_case_type)
+                test_case = await self._generate_test_case(user_input, test_case_type)
                 self.result = DrgResultWithTestCase(
                     medical_record_text=test_case.medical_record_text, expected_result=test_case.expected_result
                 )
@@ -888,7 +900,7 @@ class Task(BaseModel):
                         logger.exception(f"cannot update task status, error: {e}")
                         raise e
                     test_case_type = await self._select_test_case_type(user_input)
-                    test_case = await self._generate_test_case(test_case_type)
+                    test_case = await self._generate_test_case(user_input, test_case_type)
                     self.result = DrgResultWithTestCase(
                         medical_record_text=test_case.medical_record_text, expected_result=test_case.expected_result
                     )
