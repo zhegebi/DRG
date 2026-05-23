@@ -21,9 +21,10 @@ class DrgTask(SQLModel, table=True):
     """
 
     task_id: str = Field(primary_key=True)
+    document_id: Optional[int] = Field(default=None, foreign_key="documents.id")
     name: str
     user_input: str
-    user_id: int
+    user_id: int = Field(foreign_key="user.id")
     result: Optional[dict] = Field(
         default=None, sa_column=Column(JSON)
     )  # the format is DrgResult or DrgResultWithTestCase in models.py

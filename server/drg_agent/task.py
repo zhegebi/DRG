@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import update
 
 from server.db.utils import get_async_session
+from server.knowledge_base.table import Document
 
 from ..config import API_KEY
 from .models import (
@@ -192,9 +193,9 @@ ADRG 名称：
 {{
   "medical_record_text": "完整的病例描述文本，必须是一段字符串，不是 JSON 对象；内容应包含性别、年龄(0-120)、
   主要诊断(包含"疾病名称"(必须来自上面的诊断列表),"疾病编码"(必须与名称匹配，之后的编码也一样))、
-  次要诊断列表(列表包含0-4个次要诊断, 可与主诊断不同，但必须是诊断列表中的疾病, 次要诊断包含疾病名称和疾病编码)、
+  次要诊断列表(必须是诊断列表中的疾病, 每个次要诊断包含疾病名称和疾病编码)、
   主要手术(包含"手术名称"(必须来自上面的手术列表),"手术编码","手术级别"(整数(1-4, 随机)))、
-  其他手术列表(列表包含0-3个其他手术, 每个手术包含手术名称、手术编码、手术级别)。",
+  其他手术列表(每个手术包含手术名称、手术编码、手术级别)。",
   "expected_result": {{
     "mdc": "mdc_code",
     "adrg": "adrg_code",
@@ -720,8 +721,8 @@ class Task(BaseModel):
                 请生成一个随机但符合规则的正常场景测试用例
                 （指的是常规的、符合典型规则的诊断与手术组合，不刻意制造边缘情况或错误。）
                 以下是约束条件：
-                测试用例要尽量与 {diagnosis_keyword} 相关，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
-                以下是用户提供的信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的为准，但是不能改变生成正常场景测试用例的大前提。如果用户提供的信息无法让你生成正常场景的测试用例，就选择性地忽略那些影响生成正常场景的测试用例的信息）：
+                测试用例尽量与 {diagnosis_keyword} 相关，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术。
+                以下是用户提供的细节信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的细节信息为准，但是不能改变生成正常场景测试用例的大前提。如果用户提供的信息无法让你生成正常场景的测试用例，就选择性地忽略那些影响生成正常场景的测试用例的信息）：
                 {user_input}
                 """
             case "boundary":
@@ -729,8 +730,8 @@ class Task(BaseModel):
                 请生成一个随机但符合规则的边界测试用例
                 （重点在于测试 MCC/CC 排除表逻辑、疾病编码正好落在排除表中导致等级变化的场景。）
                 以下是约束条件：
-                测试用例要尽量与 {diagnosis_keyword} 相关，次诊断列表必须包含 {secondary_diagnosis_num} 个诊断，其他手术列表必须包含 {other_procedures_num} 个手术。
-                以下是用户提供的信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的为准，但是不能改变生成边界测试用例的大前提。如果用户提供的信息无法让你生成边界测试用例，就选择性地忽略那些影响生成边界测试用例的信息）：
+                测试用例尽量与 {diagnosis_keyword} 相关，次诊断列表包含 {secondary_diagnosis_num} 个诊断，其他手术列表包含 {other_procedures_num} 个手术。
+                以下是用户提供的细节信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的细节信息为准，但是不能改变生成边界测试用例的大前提。如果用户提供的信息无法让你生成边界测试用例，就选择性地忽略那些影响生成边界测试用例的信息）：
                 {user_input}
                 """
             case "abnormal":
@@ -738,8 +739,8 @@ class Task(BaseModel):
                 请生成一个随机但符合规则的异常场景测试用例
                 （故意包含编码错误、信息缺失（例如缺少主诊断或主要手术）、不存在的编码组合等非法情况。）
                 以下是约束条件：
-                测试用例要尽量与 {diagnosis_keyword} 相关。
-                以下是用户提供的信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的为准，但是不能改变生成异常场景测试用例的大前提。如果用户提供的信息无法让你生成异常场景的测试用例，就选择性地忽略那些影响生成异常场景的测试用例的信息）：
+                测试用例尽量与 {diagnosis_keyword} 相关。
+                以下是用户提供的细节信息（可以作为生成测试用例的参考信息，如果与约束条件冲突，就以用户提供的细节信息为准，但是不能改变生成异常场景测试用例的大前提。如果用户提供的信息无法让你生成异常场景的测试用例，就选择性地忽略那些影响生成异常场景的测试用例的信息）：
                 {user_input}
                 """
         # 3. call deepseek api to generate test case
@@ -779,6 +780,124 @@ class Task(BaseModel):
         except Exception as e:
             logger.exception(f"cannot generate test case, error: {e}")
             raise Exception(f"生成测试用例失败, {e}")
+
+    """
+    generate document
+    """
+
+    def _generate_document(self) -> str:
+        if self.should_generate_test:
+            assert isinstance(self.result, DrgResultWithTestCase), (
+                "result should be DrgResultWithTestCase when should_generate_test is True"
+            )
+            if self.status == TaskStatus.FAILED:
+                document = f"""# DRG 测试用例生成及其验证
+
+### 用户输入
+
+```
+{self.user_input}
+```
+
+### 测试病历
+
+{self.result.medical_record_text}
+
+### 预期结果
+
+**MDC 分组**: {self.result.expected_result.mdc}
+
+**ADRG 分组**: {self.result.expected_result.adrg}
+
+**最终 DRG 组**: {self.result.expected_result.drg}
+
+**并发症/合并症等级**: {self.result.expected_result.complication}
+
+**入组理由**:
+
+{self.result.expected_result.reason}
+
+### 测试结果
+
+**错误信息**:
+
+{self.err_msg}
+"""
+            elif self.status == TaskStatus.SUCCESS:
+                assert self.result.test_result is not None, "test_result should not be None when status is SUCCESS"
+                document = f"""# DRG 测试用例生成及其验证
+
+### 用户输入
+
+```
+{self.user_input}
+```
+
+### 测试病历
+
+{self.result.medical_record_text}
+
+### 预期结果
+
+**MDC 分组**: {self.result.expected_result.mdc}
+
+**ADRG 分组**: {self.result.expected_result.adrg}
+
+**最终 DRG 组**: {self.result.expected_result.drg}
+
+**并发症/合并症等级**: {self.result.expected_result.complication}
+
+**入组理由**:
+
+{self.result.expected_result.reason}
+
+### 测试结果
+
+**MDC 分组**: {self.result.test_result.mdc}
+
+**ADRG 分组**: {self.result.test_result.adrg}
+
+**最终 DRG 组**: {self.result.test_result.drg}
+
+**并发/合并症等级**: {self.result.test_result.complication}
+
+**入组理由**:
+
+{self.result.test_result.reason}
+"""
+            else:
+                logger.exception(f"unexpected task status when generating document: {self.status}")
+                raise Exception(f"unexpected task status when generating document: {self.status}")
+        else:
+            assert isinstance(self.result, DrgResult), "result should be DrgResult when should_generate_test is False"
+            assert self.status == TaskStatus.SUCCESS, f"unexpected task status when generating document: {self.status}"
+            document = f"""# DRG 入组结果报告
+
+### 用户输入
+
+```
+{self.user_input}
+```
+
+### 入组结果
+
+**MDC 分组**：{self.result.mdc}
+
+**ADRG 分组**：{self.result.adrg}
+
+**最终 DRG 组**：{self.result.drg}
+
+**并发症/合并症等级**：{self.result.complication}
+
+**入组理由**：
+
+{self.result.reason}
+"""
+        return document
+
+    """
+    public methods
+    """
 
     async def run_task_without_test(self, medical_record_text: str, uv_test: bool = False):
         """
@@ -842,6 +961,22 @@ class Task(BaseModel):
                         await db_client.rollback()
                         logger.exception(f"cannot update task status and result, error: {e}")
                         raise e
+                    # add document to knowledge base
+                    try:
+                        document = self._generate_document()
+                        document_obj = Document(
+                            title=self.name,
+                            content=document,
+                        )
+                        db_client.add(document_obj)
+                        await db_client.flush()
+                        await db_client.exec(
+                            update(DrgTask).where(DrgTask.task_id == self.id).values(document_id=document_obj.id)  # type: ignore
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot add document, error: {e}")
                 except Exception as e:
                     self.err_msg = str(e)
                     self.status = TaskStatus.FAILED
@@ -957,3 +1092,19 @@ class Task(BaseModel):
                         raise e
                 finally:
                     Task.delete_task_log(self.id)
+                    # add document to knowledge base
+                    try:
+                        document = self._generate_document()
+                        document_obj = Document(
+                            title=self.name,
+                            content=document,
+                        )
+                        db_client.add(document_obj)
+                        await db_client.flush()
+                        await db_client.exec(
+                            update(DrgTask).where(DrgTask.task_id == self.id).values(document_id=document_obj.id)  # type: ignore
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot add document, error: {e}")
