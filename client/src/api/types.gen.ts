@@ -149,6 +149,36 @@ export type BodyStartGenerateDocApiDocgenAgentGenerateDocStartPost = {
 };
 
 /**
+ * Document
+ *
+ * Represents a document in the knowledge base.
+ */
+export type Document = {
+    /**
+     * Id
+     */
+    id?: number | null;
+    /**
+     * Title
+     *
+     * The title of the document
+     */
+    title: string;
+    /**
+     * Content
+     *
+     * The content of the document
+     */
+    content: string;
+    /**
+     * Created At
+     *
+     * The timestamp when the document was created
+     */
+    created_at?: string | null;
+};
+
+/**
  * GenerateDocResponse
  */
 export type GenerateDocResponse = {
@@ -511,6 +541,54 @@ export type LogoutApiAuthLogoutPostResponses = {
 };
 
 export type LogoutApiAuthLogoutPostResponse = LogoutApiAuthLogoutPostResponses[keyof LogoutApiAuthLogoutPostResponses];
+
+export type ListDocsApiDocListPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/doc/list';
+};
+
+export type ListDocsApiDocListPostResponses = {
+    /**
+     * Response List Docs Api Doc List Post
+     *
+     * Successful Response
+     */
+    200: Array<Document>;
+};
+
+export type ListDocsApiDocListPostResponse = ListDocsApiDocListPostResponses[keyof ListDocsApiDocListPostResponses];
+
+export type GetDocApiDocIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/doc/{id}';
+};
+
+export type GetDocApiDocIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDocApiDocIdGetError = GetDocApiDocIdGetErrors[keyof GetDocApiDocIdGetErrors];
+
+export type GetDocApiDocIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Document;
+};
+
+export type GetDocApiDocIdGetResponse = GetDocApiDocIdGetResponses[keyof GetDocApiDocIdGetResponses];
 
 export type GenerateDocApiDocgenAgentGenerateDocPostData = {
     body?: BodyGenerateDocApiDocgenAgentGenerateDocPost;
