@@ -149,7 +149,7 @@
             </button>
           </header>
           <div class="drawer-body">
-            <pre class="drawer-content">{{ detailDoc.content }}</pre>
+            <div class="drawer-content markdown-body" v-html="renderedContent"></div>
           </div>
         </aside>
       </Transition>
@@ -173,6 +173,7 @@ import {
 } from '@mdi/js'
 import { listDocsApiDocListPost, getDocApiDocIdGet, listCategoriesApiDocCategoriesGet } from '@/api/sdk.gen'
 import type { Document } from '@/api/types.gen'
+import { marked } from 'marked'
 
 // 状态
 const docs = ref<Document[]>([])
@@ -208,6 +209,12 @@ const filteredDocs = computed(() => {
     list = list.filter(d => d.title.toLowerCase().includes(q))
   }
   return list
+})
+
+// 渲染 markdown 内容
+const renderedContent = computed(() => {
+  if (!detailDoc.value?.content) return ''
+  return marked(detailDoc.value.content)
 })
 
 function formatTime(dateStr?: string | null): string {
@@ -751,12 +758,137 @@ onMounted(() => {
 
 .drawer-content {
   margin: 0;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 14px;
   line-height: 1.8;
   color: $text-content;
-  white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+/* ===== Markdown 渲染样式 ===== */
+.markdown-body {
+  :deep(h1) {
+    margin: 20px 0 10px;
+    font-size: 22px;
+    font-weight: 700;
+    color: $text-title;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba($dark, 0.08);
+  }
+
+  :deep(h2) {
+    margin: 18px 0 8px;
+    font-size: 18px;
+    font-weight: 700;
+    color: $text-title;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba($dark, 0.06);
+  }
+
+  :deep(h3) {
+    margin: 16px 0 6px;
+    font-size: 16px;
+    font-weight: 600;
+    color: $text-title;
+  }
+
+  :deep(h4),
+  :deep(h5),
+  :deep(h6) {
+    margin: 14px 0 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: $text-title;
+  }
+
+  :deep(p) {
+    margin: 8px 0;
+    line-height: 1.8;
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    margin: 6px 0;
+    padding-left: 24px;
+    line-height: 1.8;
+  }
+
+  :deep(li) {
+    margin: 2px 0;
+  }
+
+  :deep(blockquote) {
+    margin: 10px 0;
+    padding: 8px 16px;
+    border-left: 4px solid $primary;
+    background: rgba($primary, 0.04);
+    color: $text-muted;
+  }
+
+  :deep(code) {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba($dark, 0.06);
+    color: #e11d48;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.9em;
+  }
+
+  :deep(pre) {
+    margin: 12px 0;
+    padding: 14px 16px;
+    border-radius: 8px;
+    background: rgba($dark, 0.04);
+    overflow-x: auto;
+  }
+
+  :deep(pre code) {
+    padding: 0;
+    background: none;
+    color: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  :deep(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+
+  :deep(th) {
+    padding: 8px 12px;
+    border: 1px solid rgba($dark, 0.1);
+    background: rgba($dark, 0.04);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  :deep(td) {
+    padding: 6px 12px;
+    border: 1px solid rgba($dark, 0.1);
+  }
+
+  :deep(hr) {
+    margin: 20px 0;
+    border: none;
+    border-top: 1px solid rgba($dark, 0.08);
+  }
+
+  :deep(img) {
+    max-width: 100%;
+    border-radius: 6px;
+  }
+
+  :deep(a) {
+    color: $primary;
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
+
+  :deep(strong) {
+    font-weight: 600;
+  }
 }
 
 /* ===== 抽屉动画 ===== */
