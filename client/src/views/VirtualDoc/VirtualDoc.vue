@@ -68,12 +68,11 @@
               <th class="col-title">标题</th>
               <th class="col-category">分类</th>
               <th class="col-time">创建时间</th>
-              <th class="col-actions">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loadingDocs" class="table-row-empty">
-              <td colspan="5">
+              <td colspan="4">
                 <div class="table-empty">
                   <div class="spinner"></div>
                   <span>加载中...</span>
@@ -81,7 +80,7 @@
               </td>
             </tr>
             <tr v-else-if="filteredDocs.length === 0" class="table-row-empty">
-              <td colspan="5">
+              <td colspan="4">
                 <div class="table-empty">
                   <SvgIcon type="mdi" :path="mdiFileDocumentOutline" class="empty-icon" />
                   <span>{{ searchQuery ? '未找到匹配的文档' : '暂无文档' }}</span>
@@ -92,8 +91,8 @@
               v-for="(doc, index) in filteredDocs"
               :key="doc.id ?? index"
               class="table-row"
-              :class="{ 'row-active': selectedDocId === doc.id }"
-              @click="selectDoc(doc)"
+              :class="{ 'row-active': detailDoc?.id === doc.id }"
+              @click="openDetail(doc)"
             >
               <td class="col-id">{{ doc.id }}</td>
               <td class="col-title">
@@ -103,15 +102,6 @@
                 <span class="category-badge">{{ doc.category || '未分类' }}</span>
               </td>
               <td class="col-time">{{ formatTime(doc.created_at) }}</td>
-              <td class="col-actions">
-                <button
-                  class="action-btn view-btn"
-                  title="查看内容"
-                  @click.stop="openDetail(doc)"
-                >
-                  <SvgIcon type="mdi" :path="mdiEyeOutline" class="action-icon" />
-                </button>
-              </td>
             </tr>
           </tbody>
         </table>
@@ -168,7 +158,6 @@ import {
   mdiFolderMultipleOutline,
   mdiMagnify,
   mdiFileDocumentOutline,
-  mdiEyeOutline,
   mdiClose,
 } from '@mdi/js'
 import { listDocsApiDocListPost, getDocApiDocIdGet, listCategoriesApiDocCategoriesGet } from '@/api/sdk.gen'
@@ -179,7 +168,6 @@ import { marked } from 'marked'
 const docs = ref<Document[]>([])
 const categories = ref<string[]>([])
 const selectedCategory = ref<string | null>(null)
-const selectedDocId = ref<number | null>(null)
 const detailDoc = ref<Document | null>(null)
 const searchQuery = ref('')
 const loadingDocs = ref(false)
@@ -269,10 +257,6 @@ async function loadAll() {
 function selectCategory(cat: string | null) {
   selectedCategory.value = cat
   searchQuery.value = ''
-}
-
-function selectDoc(doc: Document) {
-  selectedDocId.value = doc.id ?? null
 }
 
 async function openDetail(doc: Document) {
@@ -546,7 +530,6 @@ onMounted(() => {
 .col-title { min-width: 200px; }
 .col-category { width: 120px; }
 .col-time { width: 160px; }
-.col-actions { width: 60px; text-align: center; }
 
 .table-row {
   cursor: pointer;
@@ -589,31 +572,6 @@ onMounted(() => {
   font-weight: 500;
   background: rgba($primary, 0.08);
   color: $primary;
-}
-
-.action-btn {
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-  color: $text-muted;
-
-  &:hover {
-    background: rgba($primary, 0.1);
-    color: $primary;
-  }
-}
-
-.action-icon {
-  width: 18px;
-  height: 18px;
-  fill: currentColor;
 }
 
 .table-empty {
