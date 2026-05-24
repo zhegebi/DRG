@@ -21,6 +21,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/VirtualDoc',
+    name: 'virtualdoc',
+    component: () => import('../views/VirtualDoc/VirtualDoc.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/auth',
     name: 'auth',
     component: () => import('../views/Auth/AuthPage.vue'),

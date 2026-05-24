@@ -29,3 +29,23 @@ def init_db():
     async_engine = create_async_engine(f"sqlite+aiosqlite:///{DB_DIR}/{DB_FILE}", echo=True)
 
     SQLModel.metadata.create_all(sync_engine)
+
+    # migrate: add category column to documents table if missing
+    _migrate_documents(sync_engine)
+
+
+def _migrate_documents(engine):
+    """Add category column to existing documents table."""
+    try:
+        from sqlalchemy import inspect
+
+        inspector = inspect(engine)
+        columns = [c["name"] for c in inspector.get_columns("documents")]
+        if "category" not in columns:
+            with engine.connect() as conn:
+                conn.exec_driver_sql(
+                    "ALTER TABLE documents ADD COLUMN category VARCHAR DEFAULT '未分类'"
+                )
+                conn.commit()
+    except Exception:
+        pass  # table may not exist yet, that's fine

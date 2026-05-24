@@ -13,6 +13,8 @@ import {
   mdiEmailOutline,
   mdiAccountOutline,
   mdiIdentifier,
+  mdiBookOpenOutline,
+  mdiBookOpen,
 } from "@mdi/js";
 import { useAuthStore } from "@/stores/auth";
 
@@ -111,13 +113,21 @@ const navItems = [
     iconOutline: mdiMicroscope,
     iconFilled: mdiMicroscope
   },
-  { 
-    name: "DocGen", 
-    path: "/DocGen", 
-    label: "文档自动生成智能体", 
+  {
+    name: "DocGen",
+    path: "/DocGen",
+    label: "文档自动生成智能体",
     routeName: "docgen",
     iconOutline: mdiFileDocumentOutline,
     iconFilled: mdiFileDocumentOutline
+  },
+  {
+    name: "VirtualDoc",
+    path: "/VirtualDoc",
+    label: "虚拟文档系统",
+    routeName: "virtualdoc",
+    iconOutline: mdiBookOpenOutline,
+    iconFilled: mdiBookOpen
   },
 ];
 

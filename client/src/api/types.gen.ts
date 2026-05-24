@@ -171,6 +171,12 @@ export type Document = {
      */
     content: string;
     /**
+     * Category
+     *
+     * The category of the document
+     */
+    category?: string | null;
+    /**
      * Created At
      *
      * The timestamp when the document was created
@@ -545,7 +551,14 @@ export type LogoutApiAuthLogoutPostResponse = LogoutApiAuthLogoutPostResponses[k
 export type ListDocsApiDocListPostData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Category
+         *
+         * Filter by category
+         */
+        category?: string;
+    };
     url: '/api/doc/list';
 };
 
@@ -589,6 +602,22 @@ export type GetDocApiDocIdGetResponses = {
 };
 
 export type GetDocApiDocIdGetResponse = GetDocApiDocIdGetResponses[keyof GetDocApiDocIdGetResponses];
+
+export type ListCategoriesApiDocCategoriesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/doc/categories';
+};
+
+export type ListCategoriesApiDocCategoriesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<string>;
+};
+
+export type ListCategoriesApiDocCategoriesGetResponse = ListCategoriesApiDocCategoriesGetResponses[keyof ListCategoriesApiDocCategoriesGetResponses];
 
 export type GenerateDocApiDocgenAgentGenerateDocPostData = {
     body?: BodyGenerateDocApiDocgenAgentGenerateDocPost;
