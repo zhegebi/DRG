@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AppendHintApiDocgenAgentRunsRunIdHintPostData, AppendHintApiDocgenAgentRunsRunIdHintPostErrors, AppendHintApiDocgenAgentRunsRunIdHintPostResponses, CreateTaskApiDrgTaskCreatePostData, CreateTaskApiDrgTaskCreatePostErrors, CreateTaskApiDrgTaskCreatePostResponses, DeleteTaskApiDrgTaskTaskIdDeleteData, DeleteTaskApiDrgTaskTaskIdDeleteErrors, DeleteTaskApiDrgTaskTaskIdDeleteResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetData, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetErrors, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetResponses, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetData, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetErrors, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetResponses, GenerateDocApiDocgenAgentGenerateDocPostData, GenerateDocApiDocgenAgentGenerateDocPostErrors, GenerateDocApiDocgenAgentGenerateDocPostResponses, GetDocApiDocIdGetData, GetDocApiDocIdGetErrors, GetDocApiDocIdGetResponses, GetTaskListApiDrgTaskListGetData, GetTaskListApiDrgTaskListGetResponses, GetTaskProgressApiDrgTaskTaskIdProgressStepGetData, GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors, GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses, GetTaskResultApiDrgTaskResultTaskIdGetData, GetTaskResultApiDrgTaskResultTaskIdGetErrors, GetTaskResultApiDrgTaskResultTaskIdGetResponses, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetData, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetResponses, GetTaskStatusApiDrgTaskStatusGetData, GetTaskStatusApiDrgTaskStatusGetErrors, GetTaskStatusApiDrgTaskStatusGetResponses, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostData, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostErrors, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponses, ListCategoriesApiDocCategoriesGetData, ListCategoriesApiDocCategoriesGetResponses, ListDocsApiDocListPostData, ListDocsApiDocListPostResponses, ListDocTypesApiDocgenAgentDocTypesGetData, ListDocTypesApiDocgenAgentDocTypesGetResponses, LoginApiAuthLoginPostData, LoginApiAuthLoginPostErrors, LoginApiAuthLoginPostResponses, LogoutApiAuthLogoutPostData, LogoutApiAuthLogoutPostResponses, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetData, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetErrors, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponses, RefreshAccessTokenApiAuthRefreshPostData, RefreshAccessTokenApiAuthRefreshPostErrors, RefreshAccessTokenApiAuthRefreshPostResponses, RootGetData, RootGetResponses, ServeSpaFullPathGetData, ServeSpaFullPathGetErrors, ServeSpaFullPathGetResponses, SignupApiAuthSignupPostData, SignupApiAuthSignupPostErrors, SignupApiAuthSignupPostResponses, StartGenerateDocApiDocgenAgentGenerateDocStartPostData, StartGenerateDocApiDocgenAgentGenerateDocStartPostErrors, StartGenerateDocApiDocgenAgentGenerateDocStartPostResponses, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostData, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostErrors, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponses } from './types.gen';
+import type { AppendHintApiDocgenAgentRunsRunIdHintPostData, AppendHintApiDocgenAgentRunsRunIdHintPostErrors, AppendHintApiDocgenAgentRunsRunIdHintPostResponses, CreateTaskApiDrgTaskCreatePostData, CreateTaskApiDrgTaskCreatePostErrors, CreateTaskApiDrgTaskCreatePostResponses, DeleteTaskApiDrgTaskTaskIdDeleteData, DeleteTaskApiDrgTaskTaskIdDeleteErrors, DeleteTaskApiDrgTaskTaskIdDeleteResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetData, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetErrors, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetResponses, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetData, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetErrors, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetResponses, GenerateDocApiDocgenAgentGenerateDocPostData, GenerateDocApiDocgenAgentGenerateDocPostErrors, GenerateDocApiDocgenAgentGenerateDocPostResponses, GetDocApiDocIdGetData, GetDocApiDocIdGetErrors, GetDocApiDocIdGetResponses, GetTaskListApiDrgTaskListGetData, GetTaskListApiDrgTaskListGetResponses, GetTaskProgressApiDrgTaskTaskIdProgressStepGetData, GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors, GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses, GetTaskResultApiDrgTaskResultTaskIdGetData, GetTaskResultApiDrgTaskResultTaskIdGetErrors, GetTaskResultApiDrgTaskResultTaskIdGetResponses, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetData, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetResponses, GetTaskStatusApiDrgTaskStatusGetData, GetTaskStatusApiDrgTaskStatusGetErrors, GetTaskStatusApiDrgTaskStatusGetResponses, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostData, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostErrors, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponses, ListCategoriesApiDocCategoriesGetData, ListCategoriesApiDocCategoriesGetResponses, ListDocsApiDocListPostData, ListDocsApiDocListPostErrors, ListDocsApiDocListPostResponses, ListDocTypesApiDocgenAgentDocTypesGetData, ListDocTypesApiDocgenAgentDocTypesGetResponses, LoginApiAuthLoginPostData, LoginApiAuthLoginPostErrors, LoginApiAuthLoginPostResponses, LogoutApiAuthLogoutPostData, LogoutApiAuthLogoutPostResponses, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetData, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetErrors, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponses, RefreshAccessTokenApiAuthRefreshPostData, RefreshAccessTokenApiAuthRefreshPostErrors, RefreshAccessTokenApiAuthRefreshPostResponses, RootGetData, RootGetResponses, ServeSpaFullPathGetData, ServeSpaFullPathGetErrors, ServeSpaFullPathGetResponses, SignupApiAuthSignupPostData, SignupApiAuthSignupPostErrors, SignupApiAuthSignupPostResponses, StartGenerateDocApiDocgenAgentGenerateDocStartPostData, StartGenerateDocApiDocgenAgentGenerateDocStartPostErrors, StartGenerateDocApiDocgenAgentGenerateDocStartPostResponses, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostData, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostErrors, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -73,24 +73,12 @@ export const logoutApiAuthLogoutPost = <ThrowOnError extends boolean = false>(op
 /**
  * List Docs
  *
- * List all documents in the knowledge base.
+ * List all documents in the knowledge base, optionally filtered by category.
  */
-export const listDocsApiDocListPost = <ThrowOnError extends boolean = false>(options?: Options<ListDocsApiDocListPostData, ThrowOnError>) => (options?.client ?? client).post<ListDocsApiDocListPostResponses, unknown, ThrowOnError>({
+export const listDocsApiDocListPost = <ThrowOnError extends boolean = false>(options?: Options<ListDocsApiDocListPostData, ThrowOnError>) => (options?.client ?? client).post<ListDocsApiDocListPostResponses, ListDocsApiDocListPostErrors, ThrowOnError>({
     responseType: 'json',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/doc/list',
-    ...options
-});
-
-/**
- * Get Doc
- *
- * Get a specific document by ID.
- */
-export const getDocApiDocIdGet = <ThrowOnError extends boolean = false>(options: Options<GetDocApiDocIdGetData, ThrowOnError>) => (options.client ?? client).get<GetDocApiDocIdGetResponses, GetDocApiDocIdGetErrors, ThrowOnError>({
-    responseType: 'json',
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/api/doc/{id}',
     ...options
 });
 
@@ -103,6 +91,18 @@ export const listCategoriesApiDocCategoriesGet = <ThrowOnError extends boolean =
     responseType: 'json',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/doc/categories',
+    ...options
+});
+
+/**
+ * Get Doc
+ *
+ * Get a specific document by ID.
+ */
+export const getDocApiDocIdGet = <ThrowOnError extends boolean = false>(options: Options<GetDocApiDocIdGetData, ThrowOnError>) => (options.client ?? client).get<GetDocApiDocIdGetResponses, GetDocApiDocIdGetErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/doc/{id}',
     ...options
 });
 

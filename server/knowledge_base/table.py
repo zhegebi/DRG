@@ -1,7 +1,19 @@
 import datetime
+from enum import Enum
 from typing import Optional
 
 from sqlmodel import Field, SQLModel, text
+
+
+class Category(str, Enum):
+    """Enumeration for document categories."""
+
+    TEST_CASE = "test_case"
+    DRG_GROUP = "drg_group"
+    REQUIREMENT = "requirement"
+    ARC = "ARCH"
+    TEST_CASE_DOC = "test_case_doc"
+    ANY = "any"
 
 
 class Document(SQLModel, table=True):
@@ -12,7 +24,7 @@ class Document(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(..., description="The title of the document")
     content: str = Field(..., description="The content of the document")
-    category: Optional[str] = Field(default=None, description="The category of the document")
+    category: Category = Field(default=Category.ANY, description="The category of the document")
     created_at: Optional[datetime.datetime] = Field(
         default_factory=datetime.datetime.now,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},

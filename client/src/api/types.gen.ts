@@ -149,6 +149,13 @@ export type BodyStartGenerateDocApiDocgenAgentGenerateDocStartPost = {
 };
 
 /**
+ * Category
+ *
+ * Enumeration for document categories.
+ */
+export type Category = 'test_case' | 'drg_group' | 'requirement' | 'ARCH' | 'test_case_doc' | 'any';
+
+/**
  * Document
  *
  * Represents a document in the knowledge base.
@@ -171,11 +178,9 @@ export type Document = {
      */
     content: string;
     /**
-     * Category
-     *
      * The category of the document
      */
-    category?: string | null;
+    category?: Category;
     /**
      * Created At
      *
@@ -562,6 +567,15 @@ export type ListDocsApiDocListPostData = {
     url: '/api/doc/list';
 };
 
+export type ListDocsApiDocListPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListDocsApiDocListPostError = ListDocsApiDocListPostErrors[keyof ListDocsApiDocListPostErrors];
+
 export type ListDocsApiDocListPostResponses = {
     /**
      * Response List Docs Api Doc List Post
@@ -572,6 +586,24 @@ export type ListDocsApiDocListPostResponses = {
 };
 
 export type ListDocsApiDocListPostResponse = ListDocsApiDocListPostResponses[keyof ListDocsApiDocListPostResponses];
+
+export type ListCategoriesApiDocCategoriesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/doc/categories';
+};
+
+export type ListCategoriesApiDocCategoriesGetResponses = {
+    /**
+     * Response List Categories Api Doc Categories Get
+     *
+     * Successful Response
+     */
+    200: Array<Category>;
+};
+
+export type ListCategoriesApiDocCategoriesGetResponse = ListCategoriesApiDocCategoriesGetResponses[keyof ListCategoriesApiDocCategoriesGetResponses];
 
 export type GetDocApiDocIdGetData = {
     body?: never;
@@ -602,22 +634,6 @@ export type GetDocApiDocIdGetResponses = {
 };
 
 export type GetDocApiDocIdGetResponse = GetDocApiDocIdGetResponses[keyof GetDocApiDocIdGetResponses];
-
-export type ListCategoriesApiDocCategoriesGetData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/doc/categories';
-};
-
-export type ListCategoriesApiDocCategoriesGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: Array<string>;
-};
-
-export type ListCategoriesApiDocCategoriesGetResponse = ListCategoriesApiDocCategoriesGetResponses[keyof ListCategoriesApiDocCategoriesGetResponses];
 
 export type GenerateDocApiDocgenAgentGenerateDocPostData = {
     body?: BodyGenerateDocApiDocgenAgentGenerateDocPost;

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from sqlmodel import desc, select, distinct
+from sqlmodel import desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from server.db.utils import get_async_session
 from server.user.auth import get_current_user
 from server.user.table import User
 
-from .table import Document
+from .table import Category, Document
 
 router = APIRouter(prefix="/api/doc")
 
@@ -36,15 +36,11 @@ async def list_docs(
 @router.get("/categories")
 async def list_categories(
     current_user: User = Depends(get_current_user),
-    db_client: AsyncSession = Depends(get_async_session),
-) -> list[str]:
+) -> list[Category]:
     """List all distinct document categories."""
     try:
-        result = await db_client.exec(select(distinct(Document.category)))
-        categories = result.all()
-        return [c for c in categories if c is not None]
+        return list(Category)
     except Exception as e:
-        await db_client.rollback()
         logger.exception(f"Error listing categories: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
