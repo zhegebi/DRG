@@ -12,7 +12,7 @@ class Document(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(..., description="The title of the document")
     content: str = Field(..., description="The content of the document")
-    category: Optional[str] = Field(default="未分类", description="The category of the document")
+    category: Optional[str] = Field(default=None, description="The category of the document")
     created_at: Optional[datetime.datetime] = Field(
         default_factory=datetime.datetime.now,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
