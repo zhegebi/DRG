@@ -12,7 +12,7 @@ output_layout.json
 │   └── levels[]        # 每级: html_tag, markdown_prefix, numbering_*, font_size, ...
 ├── body_text           # 正文段落
 ├── document_title      # 文档总标题 (项目名前缀 + 文档名)
-├── document_meta       # 元数据模板 (fields 数组)
+├── document_meta       # 封面小组信息模板 (fields 数组)
 ├── figures             # 图标题格式、编号
 ├── tables              # 表标题格式、编号、单元格样式
 ├── code_blocks         # 代码块样式
@@ -67,11 +67,9 @@ output_layout.json
 | 2 | h2 | `##` | chinese_upper | `{number}、{title}` | 22pt | 一、引言 |
 | 3 | h3 | `###` | decimal_dot | `{number} {title}` | 18pt | 1.1 目的 |
 | 4 | h4 | `####` | decimal_dot | `{number} {title}` | 16pt | 1.1.1 范围 |
-| 5 | h5 | `#####` | parentheses_decimal | `({number}) {title}` | 14pt | (1) 子项 |
+| 5 | h5 | `#####` | decimal_dot_4 | `{number} {title}` | 16pt | 3.1.1.2 字段校验 |
 
-level 5 支持两种编号风格:
-- 默认 `parentheses_decimal`: `(1)` `(2)` `(3)`
-- 备选 `decimal_dot_4`: `3.1.1.2` (四段十进制，由 `numbering_style_alt` / `numbering_format_alt` 定义)
+level 5 固定使用 `decimal_dot_4` 四段式编号，例如 `3.1.1.2`。该规则不可选；`(1)(2)(3)` 与 `a. b. c. d.` 仅可作为正文小项标识，不能作为标题层级编号。
 
 ---
 
@@ -81,6 +79,7 @@ level 5 支持两种编号风格:
 {
   "alignment": "justified",
   "first_line_indent": "2em",
+  "first_line_indent_chars": 2,
   "line_spacing": "1.25"
 }
 ```
@@ -105,25 +104,25 @@ level 5 支持两种编号风格:
 
 ## document_meta
 
-模板化元数据，`_extract_doc_info()` 和 `_format_title_html()` 据此提取和格式化:
+模板化封面小组信息，`_extract_doc_info()` 和 `_format_title_html()` 据此提取和格式化:
 
 ```json
 {
   "fields": [
-    {"key": "文档编号", "pattern": "SRS-DRG-AGENT-V{version}", "example": "SRS-DRG-AGENT-V1.0"},
-    {"key": "版本号",   "pattern": "V{major}.{minor}",           "example": "V1.0"},
-    {"key": "编制日期", "pattern": "{YYYY}年{M}月",               "example": "2026年3月"},
-    {"key": "文档状态", "pattern": "正式发布 | 草案 | 已定稿",      "example": "正式发布"}
+    {"key": "班级", "pattern": "{班级名称}", "default": ""},
+    {"key": "组长", "pattern": "{组长姓名}", "default": ""},
+    {"key": "组员", "pattern": "{组员姓名列表，使用空格分隔}", "default": ""},
+    {"key": "日期", "pattern": "{YYYY}年{M}月{D}日", "default": ""}
   ]
 }
 ```
 
 **数据流**:
-1. LLM 按 fields 顺序生成 `**{key}：{value}**` 行
-2. `_extract_doc_info()` 按 `key` 精确匹配提取
+1. 用户在提示词或上传文件中提供 `班级/组长/组员/日期`
+2. `normalize_document_header()` 按 fields 顺序生成 `**{key}：{value}**` 行，未提供则留空
 3. `_format_title_html()` 按 `fields` 顺序垂直渲染到标题页
 
-新增字段只需在此数组追加即可，代码自动适配。
+新增字段只需在此数组追加即可，代码自动适配。旧版 `文档编号/版本号/编制日期/文档状态` 行会在规范化时被移除。
 
 ---
 
@@ -142,7 +141,8 @@ level 5 支持两种编号风格:
 
 - `numbering_scope: per_chapter` — 每章从 1 开始: `图1-1`, `图2-1`, ...
 - 图编号 = `{一级章节序号}-{章节内图片序号}`
-- 图和表在各章内独立计数的
+- 图 caption 固定在图片下方
+- 图和表在各章内独立计数
 
 ---
 
@@ -157,6 +157,9 @@ level 5 支持两种编号风格:
   "caption_position": "above"
 }
 ```
+
+- 表编号 = `{一级章节序号}-{章节内表格序号}`，每个一级章节内从 1 开始
+- 表 caption 固定在表格上方
 
 表格 CSS:
 - `th/td`: `text-align: center; vertical-align: middle`

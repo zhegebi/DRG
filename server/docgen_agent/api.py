@@ -1,12 +1,8 @@
-"""docgen_agent 前端接口。
+"""docgen_agent task API."""
 
-POST /api/docgen_agent/generate-doc       — 同步生成文档（支持上传 txt/md 需求文件）
-POST /api/docgen_agent/generate-doc/start — 后台生成文档
-GET  /api/docgen_agent/runs/{run_id}/trace — 查询运行轨迹
-POST /api/docgen_agent/runs/{run_id}/hint  — 运行中追加提示
-GET  /api/docgen_agent/doc-types          — 获取支持的文档类型列表
-"""
-
+import asyncio
+import json
+import re
 import shutil
 import tempfile
 import uuid
@@ -14,19 +10,24 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
-from starlette.concurrency import run_in_threadpool
+from sqlmodel import delete, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from .tools import OUTPUT_DIR
+import server.db
+from server.db.utils import get_async_session
+from server.knowledge_base.table import Document
+from server.user.auth import get_current_user
+from server.user.table import User
+
+from .table import DocgenTask
+from .tools import OUTPUT_DIR, client
 from .workflow import (
-    GenerationInterrupted,
     GenerationTerminated,
-    append_generation_hint,
     get_generation_trace,
-    request_generation_interrupt,
     request_generation_terminate,
     run_agent,
     start_generation_trace,
@@ -40,50 +41,284 @@ UPLOAD_DIR = Path(tempfile.gettempdir()) / "drg_docgen_uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".txt", ".md"}
+_TERMINAL_STATUSES = {"completed", "failed", "terminated"}
 
 
-class GenerateDocResponse(BaseModel):
+class StartDocgenTaskResponse(BaseModel):
     status: str
-    run_id: str
-    file_name: str = ""
-    file_path: str = ""
-    pdf_path: str = ""
+    task_id: str
     doc_type: str
+    task_title: str = ""
 
 
-class StartGenerateDocResponse(BaseModel):
-    status: str
-    run_id: str
-    doc_type: str
+class DocgenTaskStatusResponse(BaseModel):
+    task_id: str
+    task_status: str
 
 
-class AgentTraceResponse(BaseModel):
-    run_id: str
+class DocgenTaskTraceResponse(BaseModel):
+    task_id: str
     status: str
     doc_type: str = ""
+    task_title: str = ""
+    document_id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     output_path: Optional[str] = None
     pdf_path: Optional[str] = None
     error: Optional[str] = None
-    interrupted: bool = False
     terminated: bool = False
     events: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class InterruptResponse(BaseModel):
-    status: str
-    run_id: str
-
-
 class TerminateResponse(BaseModel):
     status: str
-    run_id: str
+    task_id: str
 
 
-class AppendHintResponse(BaseModel):
-    status: str
-    run_id: str
+def _normalize_trace_payload(
+    task_id: str,
+    trace: dict[str, Any],
+    row: Optional[DocgenTask] = None,
+) -> dict[str, Any]:
+    payload = dict(trace)
+    payload.pop("run_id", None)
+    payload["task_id"] = task_id
+    if row is not None:
+        payload.setdefault("doc_type", row.doc_type)
+        payload.setdefault("task_title", row.name)
+        payload.setdefault("document_id", row.document_id)
+        payload.setdefault("created_at", row.created_at.isoformat(timespec="seconds"))
+        payload.setdefault("updated_at", row.updated_at.isoformat(timespec="seconds"))
+        if not payload.get("output_path"):
+            payload["output_path"] = row.output_path
+        if not payload.get("pdf_path"):
+            payload["pdf_path"] = row.pdf_path
+        if not payload.get("error"):
+            payload["error"] = row.error
+    payload["terminated"] = payload.get("status") in {"terminate_requested", "terminated"}
+    payload.setdefault("events", [])
+    return payload
+
+
+def _trace_payload_from_db(row: DocgenTask) -> dict[str, Any]:
+    trace = row.trace if isinstance(row.trace, dict) else {}
+    return _normalize_trace_payload(
+        row.task_id,
+        {
+            "status": row.status,
+            "doc_type": row.doc_type,
+            "task_title": row.name,
+            "document_id": row.document_id,
+            "created_at": row.created_at.isoformat(timespec="seconds"),
+            "updated_at": row.updated_at.isoformat(timespec="seconds"),
+            "output_path": row.output_path or trace.get("output_path"),
+            "pdf_path": row.pdf_path or trace.get("pdf_path"),
+            "error": row.error or trace.get("error"),
+            "events": trace.get("events", []),
+        },
+        row,
+    )
+
+
+async def _create_docgen_task_record(
+    db_client: AsyncSession,
+    *,
+    task_id: str,
+    user_id: Optional[int],
+    doc_type: str,
+    prompt: str,
+    source_paths: list[str],
+    task_title: str,
+    initial_trace: dict[str, Any],
+) -> None:
+    row = DocgenTask(
+        task_id=task_id,
+        user_id=user_id,
+        name=task_title,
+        doc_type=doc_type,
+        user_input=prompt,
+        source_files=[Path(path).name for path in source_paths],
+        status="running",
+        trace=_normalize_trace_payload(task_id, initial_trace),
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    db_client.add(row)
+    await db_client.commit()
+
+
+def _generated_markdown_path(path_text: Optional[str]) -> Optional[Path]:
+    if not path_text:
+        return None
+    path = Path(path_text)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    try:
+        path = path.resolve()
+        path.relative_to(OUTPUT_DIR.resolve())
+    except (OSError, ValueError):
+        logger.warning(f"Skip storing generated document outside output dir: {path_text}")
+        return None
+    if path.suffix.lower() == ".pdf":
+        path = path.with_suffix(".md")
+    if path.suffix.lower() != ".md" or not path.exists() or not path.is_file():
+        logger.warning(f"Skip storing missing generated markdown: {path}")
+        return None
+    return path
+
+
+def _generated_document_payload(row: DocgenTask) -> Optional[tuple[str, str, str]]:
+    path = _generated_markdown_path(row.output_path)
+    if path is None:
+        return None
+    content = path.read_text(encoding="utf-8")
+    if not content.strip():
+        logger.warning(f"Skip storing empty generated markdown: {path}")
+        return None
+    title = (row.name or row.doc_type or path.stem or row.task_id).strip()
+    category = (row.doc_type or "DocGen").strip()
+    return title, content, category
+
+
+async def _store_generated_document_async(db_client: AsyncSession, task_id: str) -> None:
+    try:
+        row = await db_client.get(DocgenTask, task_id)
+        if row is None or row.status != "completed":
+            return
+        payload = _generated_document_payload(row)
+        if payload is None:
+            return
+        title, content, category = payload
+        document = await db_client.get(Document, row.document_id) if row.document_id else None
+        if document is None:
+            document = Document(title=title, content=content, category=category)
+            db_client.add(document)
+            await db_client.flush()
+            row.document_id = document.id
+        else:
+            document.title = title
+            document.content = content
+            document.category = category
+        row.updated_at = datetime.now()
+        db_client.add(document)
+        db_client.add(row)
+        await db_client.commit()
+    except Exception as exc:
+        await db_client.rollback()
+        logger.exception(f"cannot add docgen document, error: {exc}")
+
+
+def _store_generated_document_sync(session, task_id: str) -> None:
+    try:
+        row = session.get(DocgenTask, task_id)
+        if row is None or row.status != "completed":
+            return
+        payload = _generated_document_payload(row)
+        if payload is None:
+            return
+        title, content, category = payload
+        document = session.get(Document, row.document_id) if row.document_id else None
+        if document is None:
+            document = Document(title=title, content=content, category=category)
+            session.add(document)
+            session.flush()
+            row.document_id = document.id
+        else:
+            document.title = title
+            document.content = content
+            document.category = category
+        row.updated_at = datetime.now()
+        session.add(document)
+        session.add(row)
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.exception(f"cannot add docgen document, error: {exc}")
+
+
+async def _persist_trace_async(db_client: AsyncSession, task_id: str) -> None:
+    trace = get_generation_trace(task_id)
+    if trace is None:
+        return
+    row = await db_client.get(DocgenTask, task_id)
+    if row is None:
+        return
+    payload = _normalize_trace_payload(task_id, trace, row)
+    row.status = str(payload.get("status") or row.status)
+    row.name = str(payload.get("task_title") or row.name)
+    row.output_path = payload.get("output_path") or row.output_path
+    row.pdf_path = payload.get("pdf_path") or row.pdf_path
+    row.error = payload.get("error") or None
+    row.trace = payload
+    row.updated_at = datetime.now()
+    db_client.add(row)
+    await db_client.commit()
+    await _store_generated_document_async(db_client, task_id)
+
+
+def _persist_trace_sync(task_id: str) -> None:
+    trace = get_generation_trace(task_id)
+    if trace is None or server.db.sync_engine is None:
+        return
+    from sqlmodel import Session
+
+    with Session(server.db.sync_engine) as session:
+        row = session.get(DocgenTask, task_id)
+        if row is None:
+            return
+        payload = _normalize_trace_payload(task_id, trace, row)
+        row.status = str(payload.get("status") or row.status)
+        row.name = str(payload.get("task_title") or row.name)
+        row.output_path = payload.get("output_path") or row.output_path
+        row.pdf_path = payload.get("pdf_path") or row.pdf_path
+        row.error = payload.get("error") or None
+        row.trace = payload
+        row.updated_at = datetime.now()
+        session.add(row)
+        session.commit()
+        _store_generated_document_sync(session, task_id)
+
+
+def _display_title(title: str) -> str:
+    title = re.sub(r"[#*_`\"'“”‘’《》]+", "", title).strip()
+    title = re.sub(r"\s+", "", title)
+    return title or "文档生成任务"
+
+
+def _fallback_task_title(doc_type: str, prompt: str, source_paths: list[str]) -> str:
+    if prompt.strip():
+        words = re.findall(r"[\u4e00-\u9fffA-Za-z0-9]+", prompt)
+        title = "".join(words)[:16]
+        return _display_title(title)
+    if source_paths:
+        return _display_title(Path(source_paths[0]).stem.split("_", 2)[-1])
+    return _display_title(doc_type)
+
+
+def _generate_task_title(doc_type: str, prompt: str, source_paths: list[str]) -> str:
+    fallback = _fallback_task_title(doc_type, prompt, source_paths)
+    try:
+        file_names = "、".join(Path(path).name for path in source_paths[:3]) or "无"
+        resp = client.chat.completions.create(
+            model="deepseek-v4-pro",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是任务命名助手。为文档生成任务生成一个中文短标题，只输出标题本身，不要解释，不要标点，尽量不超过10个汉字。",
+                },
+                {
+                    "role": "user",
+                    "content": f"文档类型：{doc_type}\n用户提示：{prompt[:300] or '无'}\n上传文件：{file_names}",
+                },
+            ],
+            temperature=0.2,
+        )
+        title = _display_title(resp.choices[0].message.content or "")
+        return title or fallback
+    except Exception as exc:
+        logger.warning(f"生成任务标题失败，使用兜底标题: {exc}")
+        return fallback
 
 
 def _safe_output_path(path_text: str) -> Path:
@@ -100,12 +335,8 @@ def _safe_output_path(path_text: str) -> Path:
     return path
 
 
-def _save_uploaded_source_file(source_file: Optional[UploadFile]) -> Optional[str]:
-    """保存前端上传的需求文件，返回本地路径。"""
-    if source_file is None or not source_file.filename:
-        return None
-
-    original_name = Path(source_file.filename).name
+def _save_one_uploaded_source_file(source_file: UploadFile) -> str:
+    original_name = Path(source_file.filename or "uploaded.md").name
     ext = Path(original_name).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -113,7 +344,7 @@ def _save_uploaded_source_file(source_file: Optional[UploadFile]) -> Optional[st
             detail=f"不支持的文件类型: {ext}，仅支持 {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{original_name}"
+    safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{original_name}"
     dest = UPLOAD_DIR / safe_name
     with open(dest, "wb") as f:
         shutil.copyfileobj(source_file.file, f)
@@ -121,140 +352,250 @@ def _save_uploaded_source_file(source_file: Optional[UploadFile]) -> Optional[st
     return str(dest)
 
 
-def _run_agent_background(run_id: str, doc_type: DocType, prompt: str, source_path: Optional[str]) -> None:
+def _save_uploaded_source_files(
+    source_file: Optional[UploadFile] = None,
+    source_files: Optional[list[UploadFile]] = None,
+) -> list[str]:
+    saved: list[str] = []
+    if source_file is not None and source_file.filename:
+        saved.append(_save_one_uploaded_source_file(source_file))
+    for file in source_files or []:
+        if file is not None and file.filename:
+            saved.append(_save_one_uploaded_source_file(file))
+    return saved
+
+
+def _run_agent_background(task_id: str, doc_type: DocType, prompt: str, source_paths: list[str]) -> None:
     try:
         run_agent(
             doc_type=doc_type,
             user_hint=prompt,
-            source_file=source_path,
-            run_id=run_id,
+            source_files=source_paths,
+            run_id=task_id,
         )
     except GenerationTerminated:
-        logger.info(f"后台文档生成已终止: {run_id}")
-    except GenerationInterrupted:
-        logger.info(f"后台文档生成已中断: {run_id}")
+        logger.info(f"后台文档生成已终止: {task_id}")
     except Exception as e:
-        logger.exception(f"后台文档生成失败: {run_id}: {e}")
+        logger.exception(f"后台文档生成失败: {task_id}: {e}")
+    finally:
+        _persist_trace_sync(task_id)
 
 
-@router.post(
-    "/generate-doc",
-    response_model=GenerateDocResponse,
-    responses={
-        200: {"description": "文档生成成功"},
-        400: {"description": "参数错误"},
-        500: {"description": "LLM 调用失败"},
-    },
-)
-async def generate_doc(
-    prompt: str = Form(default="", description="前端用户的提示词"),
-    doc_type: DocType = Form(default="需求规格说明书", description="目标文档类型"),
-    source_file: Optional[UploadFile] = File(default=None, description="需求文件（txt/md）"),
-    run_id: Optional[str] = Form(default=None, description="运行 ID；前端可自生成后用于轮询 trace 或中断"),
-) -> GenerateDocResponse:
-    """生成技术文档。
-
-    接收前端提示词 + 可选的需求文件，按 doc_type 生成 Markdown 文档。
-    若未上传 source_file，默认使用 requirement.md。
-    """
-    source_path = _save_uploaded_source_file(source_file)
-    run_id = run_id or uuid.uuid4().hex
-    start_generation_trace(run_id, doc_type=doc_type, user_hint=prompt, reset=True)
-
-    try:
-        output_path = await run_in_threadpool(
-            run_agent,
-            doc_type=doc_type,
-            user_hint=prompt,
-            source_file=source_path,
-            run_id=run_id,
-        )
-        return GenerateDocResponse(
-            status="success",
-            run_id=run_id,
-            file_name=output_path.name,
-            file_path=str(output_path),
-            pdf_path=str(output_path.with_suffix(".pdf")),
-            doc_type=doc_type,
-        )
-    except GenerationTerminated:
-        return GenerateDocResponse(
-            status="terminated",
-            run_id=run_id,
-            doc_type=doc_type,
-        )
-    except GenerationInterrupted:
-        return GenerateDocResponse(
-            status="interrupted",
-            run_id=run_id,
-            doc_type=doc_type,
-        )
-    except Exception as e:
-        logger.exception(f"文档生成失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/generate-doc/start", response_model=StartGenerateDocResponse)
-async def start_generate_doc(
+@router.post("/task/create", response_model=StartDocgenTaskResponse)
+async def create_task(
     background_tasks: BackgroundTasks,
     prompt: str = Form(default="", description="前端用户的提示词"),
     doc_type: DocType = Form(default="需求规格说明书", description="目标文档类型"),
-    source_file: Optional[UploadFile] = File(default=None, description="需求文件（txt/md）"),
-    run_id: Optional[str] = Form(default=None, description="运行 ID；不传则后端生成"),
-) -> StartGenerateDocResponse:
-    """启动后台生成任务，立即返回 run_id，前端可用 trace/interrupt 接口轮询和中断。"""
-    source_path = _save_uploaded_source_file(source_file)
-    run_id = run_id or uuid.uuid4().hex
-    start_generation_trace(run_id, doc_type=doc_type, user_hint=prompt, reset=True)
-    background_tasks.add_task(_run_agent_background, run_id, doc_type, prompt, source_path)
-    return StartGenerateDocResponse(status="started", run_id=run_id, doc_type=doc_type)
+    source_file: Optional[UploadFile] = File(default=None, description="需求文件（txt/md），兼容旧字段"),
+    source_files: Optional[list[UploadFile]] = File(default=None, description="需求/依赖文件列表（txt/md）"),
+    task_id: Optional[str] = Form(default=None, description="任务 ID；不传则后端生成"),
+    current_user: User = Depends(get_current_user),
+    db_client: AsyncSession = Depends(get_async_session),
+) -> StartDocgenTaskResponse:
+    """创建后台文档生成任务，立即返回 task_id。"""
+    source_paths = _save_uploaded_source_files(source_file, source_files)
+    task_id = task_id or uuid.uuid4().hex
+    task_title = _generate_task_title(doc_type, prompt, source_paths)
+    assert current_user.id is not None, "current_user.id is None"
+    initial_trace = start_generation_trace(task_id, doc_type=doc_type, user_hint=prompt, task_title=task_title, reset=True)
+    await _create_docgen_task_record(
+        db_client,
+        task_id=task_id,
+        user_id=current_user.id,
+        doc_type=doc_type,
+        prompt=prompt,
+        source_paths=source_paths,
+        task_title=task_title,
+        initial_trace=initial_trace,
+    )
+    background_tasks.add_task(_run_agent_background, task_id, doc_type, prompt, source_paths)
+    return StartDocgenTaskResponse(status="started", task_id=task_id, doc_type=doc_type, task_title=task_title)
 
 
-@router.get("/runs/{run_id}/trace", response_model=AgentTraceResponse)
-async def read_generation_trace(run_id: str) -> AgentTraceResponse:
-    """读取智能体生成过程，包含阶段、模型输出、reasoning_content、工具调用和工具结果摘要。"""
-    trace = get_generation_trace(run_id)
-    if trace is None:
-        raise HTTPException(status_code=404, detail=f"运行不存在: {run_id}")
-    return AgentTraceResponse(**trace)
+@router.get("/task/list", response_model=list[DocgenTaskTraceResponse])
+async def get_task_list(
+    current_user: User = Depends(get_current_user),
+    db_client: AsyncSession = Depends(get_async_session),
+) -> list[DocgenTaskTraceResponse]:
+    """读取当前用户的文档生成任务列表。"""
+    stmt = (
+        select(DocgenTask)
+        .where(DocgenTask.user_id == current_user.id)
+        .order_by(DocgenTask.created_at.desc())  # type: ignore
+    )
+    result = await db_client.exec(stmt)
+    return [DocgenTaskTraceResponse(**_trace_payload_from_db(row)) for row in result.all()]
 
 
-@router.post("/runs/{run_id}/interrupt", response_model=InterruptResponse)
-async def interrupt_generation(run_id: str) -> InterruptResponse:
-    """请求中断指定文档生成任务。"""
-    ok = request_generation_interrupt(run_id)
+@router.get("/task/status", response_model=list[DocgenTaskStatusResponse])
+async def get_task_status(
+    task_ids: list[str] = Query(..., description="The task ids to get status"),
+    db_client: AsyncSession = Depends(get_async_session),
+) -> list[DocgenTaskStatusResponse]:
+    query_result = await db_client.exec(
+        select(DocgenTask.task_id, DocgenTask.status).where(DocgenTask.task_id.in_(task_ids))  # type: ignore
+    )
+    return [DocgenTaskStatusResponse(task_id=row[0], task_status=row[1]) for row in query_result.all()]
+
+
+@router.get("/task/{task_id}/trace", response_model=DocgenTaskTraceResponse)
+async def read_task_trace(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> DocgenTaskTraceResponse:
+    """读取文档生成任务过程，包含阶段、模型输出、工具调用和工具结果摘要。"""
+    trace = get_generation_trace(task_id)
+    row = await db_client.get(DocgenTask, task_id)
+    if trace is None and row is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    if trace is not None:
+        if row is not None:
+            await _persist_trace_async(db_client, task_id)
+            row = await db_client.get(DocgenTask, task_id)
+        return DocgenTaskTraceResponse(**_normalize_trace_payload(task_id, trace, row))
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    return DocgenTaskTraceResponse(**_trace_payload_from_db(row))
+
+
+@router.get("/task/{task_id}/trace/stream")
+async def stream_task_trace(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> StreamingResponse:
+    """以 SSE 方式持续推送 trace 快照，用于前端即时显示思考和工具调用。"""
+    if get_generation_trace(task_id) is None and await db_client.get(DocgenTask, task_id) is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+    async def event_generator():
+        last_signature = ""
+        while True:
+            trace = get_generation_trace(task_id)
+            if trace is None:
+                row = await db_client.get(DocgenTask, task_id)
+                if row is None:
+                    yield 'data: {"error":"任务不存在"}\n\n'
+                    yield "data: [END]\n\n"
+                    return
+                yield f"data: {json.dumps(_trace_payload_from_db(row), ensure_ascii=False)}\n\n"
+                yield "data: [END]\n\n"
+                return
+
+            payload = _normalize_trace_payload(task_id, trace)
+            signature = json.dumps(
+                {
+                    "status": payload.get("status"),
+                    "updated_at": payload.get("updated_at"),
+                    "event_count": len(payload.get("events", [])),
+                    "last_event": payload.get("events", [])[-1] if payload.get("events") else None,
+                    "output_path": payload.get("output_path"),
+                    "pdf_path": payload.get("pdf_path"),
+                    "error": payload.get("error"),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            if signature != last_signature:
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                last_signature = signature
+
+            if payload.get("status") in _TERMINAL_STATUSES:
+                yield "data: [END]\n\n"
+                return
+
+            await asyncio.sleep(0.2)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/task/{task_id}/terminate", response_model=TerminateResponse)
+async def terminate_task(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> TerminateResponse:
+    """请求协作式终止指定文档生成任务。"""
+    row = await db_client.get(DocgenTask, task_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    ok = request_generation_terminate(task_id)
     if not ok:
-        raise HTTPException(status_code=404, detail=f"运行不存在: {run_id}")
-    return InterruptResponse(status="interrupt_requested", run_id=run_id)
+        if row.status in _TERMINAL_STATUSES:
+            return TerminateResponse(status=row.status, task_id=task_id)
+        raise HTTPException(status_code=409, detail="任务不在当前进程中运行，无法终止")
+    await _persist_trace_async(db_client, task_id)
+    return TerminateResponse(status="terminate_requested", task_id=task_id)
 
 
-@router.post("/runs/{run_id}/terminate", response_model=TerminateResponse)
-async def terminate_generation(run_id: str) -> TerminateResponse:
-    """请求终止指定文档生成任务。"""
-    ok = request_generation_terminate(run_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail=f"运行不存在: {run_id}")
-    return TerminateResponse(status="terminate_requested", run_id=run_id)
-
-
-@router.get("/runs/{run_id}/download")
-async def download_generation_result(run_id: str) -> FileResponse:
-    """下载指定运行最终生成的 Markdown 文档。"""
-    trace = get_generation_trace(run_id)
-    if trace is None:
-        raise HTTPException(status_code=404, detail=f"运行不存在: {run_id}")
-    output_path = trace.get("output_path")
+@router.get("/task/{task_id}/download")
+async def download_task_result(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> FileResponse:
+    """下载指定任务最终生成的 Markdown 文档。"""
+    trace = get_generation_trace(task_id)
+    row = await db_client.get(DocgenTask, task_id)
+    payload = _normalize_trace_payload(task_id, trace, row) if trace else (_trace_payload_from_db(row) if row else None)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    output_path = payload.get("output_path")
     if not output_path:
         raise HTTPException(status_code=409, detail="文档尚未生成完成")
     path = _safe_output_path(str(output_path))
     if path.suffix.lower() == ".pdf":
-        markdown_candidate = path.with_suffix(".md")
-        path = _safe_output_path(str(markdown_candidate))
+        path = _safe_output_path(str(path.with_suffix(".md")))
     return FileResponse(
         path,
         filename=path.name,
         media_type="text/markdown; charset=utf-8",
     )
+
+
+@router.get("/task/{task_id}/download/pdf")
+async def download_task_pdf(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> FileResponse:
+    """下载指定任务生成的 PDF 文档。"""
+    trace = get_generation_trace(task_id)
+    row = await db_client.get(DocgenTask, task_id)
+    payload = _normalize_trace_payload(task_id, trace, row) if trace else (_trace_payload_from_db(row) if row else None)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    pdf_path = payload.get("pdf_path")
+    md_path = payload.get("output_path")
+    if not pdf_path and not md_path:
+        raise HTTPException(status_code=409, detail="文档尚未生成完成")
+    path = _safe_output_path(str(pdf_path or Path(str(md_path)).with_suffix(".pdf")))
+    if path.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=404, detail="PDF 文件不存在，请确认转换已完成")
+    return FileResponse(
+        path,
+        filename=path.name,
+        media_type="application/pdf",
+    )
+
+
+@router.delete("/task/{task_id}")
+async def delete_task(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> bool:
+    """删除已结束的文档生成任务。运行中的任务不能删除。"""
+    row = await db_client.get(DocgenTask, task_id)
+    if row is None:
+        return True
+    if row.status not in _TERMINAL_STATUSES:
+        return False
+    await db_client.exec(delete(DocgenTask).where(DocgenTask.task_id == task_id))  # type: ignore
+    await db_client.commit()
+    return True
 
 
 @router.get("/documents/{file_name}/download")
@@ -265,48 +606,6 @@ async def download_document(file_name: str) -> FileResponse:
         path,
         filename=path.name,
         media_type="application/octet-stream",
-    )
-
-
-@router.post("/runs/{run_id}/hint", response_model=AppendHintResponse)
-async def append_hint(
-    run_id: str,
-    hint: str = Form(..., description="追加的提示词或指导内容"),
-    source_file: Optional[UploadFile] = File(default=None, description="追加的参考文件"),
-) -> AppendHintResponse:
-    """在文档生成运行中追加用户提示词，下一轮 LLM 调用时会作为 user 消息注入。"""
-    if source_file and source_file.filename:
-        source_path = _save_uploaded_source_file(source_file)
-        if source_path is None:
-            raise HTTPException(status_code=400, detail="上传文件保存失败")
-        with open(source_path, encoding="utf-8") as f:
-            file_content = f.read()
-        hint = f"{hint}\n\n[上传文件 {source_file.filename} 的内容]:\n{file_content[:3000]}"
-    ok = append_generation_hint(run_id, hint)
-    if not ok:
-        raise HTTPException(status_code=404, detail=f"运行不存在或已结束: {run_id}")
-    return AppendHintResponse(status="hint_appended", run_id=run_id)
-
-
-@router.get("/runs/{run_id}/download/pdf")
-async def download_generation_pdf(run_id: str) -> FileResponse:
-    """下载指定运行生成的 PDF 文档。"""
-    trace = get_generation_trace(run_id)
-    if trace is None:
-        raise HTTPException(status_code=404, detail=f"运行不存在: {run_id}")
-    pdf_path = trace.get("pdf_path")
-    md_path = trace.get("output_path")
-    if not pdf_path and not md_path:
-        raise HTTPException(status_code=409, detail="文档尚未生成完成")
-    path = _safe_output_path(str(pdf_path or Path(str(md_path)).with_suffix(".pdf")))
-    if path.suffix.lower() != ".pdf":
-        raise HTTPException(status_code=404, detail="PDF 文件不存在，请确认转换已完成")
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="PDF 文件不存在，请确认转换已完成")
-    return FileResponse(
-        path,
-        filename=path.name,
-        media_type="application/pdf",
     )
 
 

@@ -10,7 +10,7 @@
 │  Phase 2: 拆解章节  → flatten_sections()              │
 │  Phase 3: 逐节生成  → LLM 调用 render_*/search_web    │
 │  Phase 3.5: Schema校验 → 缺失章节重生成                │
-│  Phase 4: 拼接校验  → LLM 审校全文 + 元数据            │
+│  Phase 4: 拼接校验  → LLM 审校全文 + 封面小组信息      │
 │  Phase 5: 保存 MD   → save_document + 列表修正安全网   │
 │  Phase 6: 转 PDF    → convert_to_pdf                  │
 └──────────────────────────────────────────────────────┘
@@ -40,13 +40,13 @@ client.chat.completions.create(tools=..., messages=...)
 ## 一、资料读取工具
 
 ### read_requirement
-返回全局变量 `_source_md_content`，默认读取 `requirement.md`，可通过 `set_source_file()` 在运行时切换。`SECTION_SYSTEM_PROMPT` 将需求摘要和读取阶段得到的项目上下文共同注入每章节上下文。
+返回当前运行的 ContextVar 需求内容，默认读取 `agent_input/requirement.md`，可通过 `set_source_files()` 在运行时切换为前端上传的多个需求/依赖文件。`SECTION_SYSTEM_PROMPT` 将需求摘要和读取阶段得到的项目上下文共同注入每章节上下文。
 
 ### read_output_schema
-预加载 `output_schema.json`，按 `doc_type` 裁剪后返回。仅保留目标文档的 `selected_document` 节点，去除其他文档类型。
+预加载 `agent_input/output_schema.json`，按 `doc_type` 裁剪后返回。仅保留目标文档的 `selected_document` 节点，去除其他文档类型。
 
 ### read_output_layout
-直接返回 `output_layout.json` 原文（~200 行），包含页面、字体、标题、图表、表格、代码块、列表、分页等全部排版规则。
+直接返回 `agent_input/output_layout.json` 原文，包含页面、字体、标题、图表、表格、代码块、列表、分页等全部排版规则。
 
 ---
 
@@ -155,7 +155,7 @@ regex: ```(mermaid|plantuml)\n(code)```
 
 步骤 3: HTML 后处理
   ├── _embed_images_as_base64() → 本地 <img src> → data:image/...;base64
-  ├── _format_title_html()      → H1 → 居中标题 + 模板元数据
+  ├── _format_title_html()      → H1 → 居中标题 + 封面小组信息
   ├── _center_captions()        → 图N/表N 标题居中
   └── _center_bare_images()     → 裸 <img> 段落居中
 
@@ -189,9 +189,9 @@ regex: ```(mermaid|plantuml)\n(code)```
 
 按 `output_layout.json` 的 `document_meta.fields` 模板生成标题页：
 - 替换 H1 为 `<div class="doc-title">` 居中标题
-- 按 fields 顺序垂直生成元数据行
+- 按 fields 顺序垂直生成封面小组信息行：班级、组长、组员、日期
 - `.doc-meta` CSS 含 `page-break-after: always` 实现标题独立成页
-- 自动删除 LLM 正文中重复的元数据行
+- 自动删除 LLM 正文中重复的封面信息行，并兼容清理旧版文档编号/版本号等字段
 
 ### `_layout_css`
 
@@ -253,7 +253,7 @@ def _resolve_project_path(path):
 | `_embed_images_as_base64` | tools.py:1482 | 本地图片 → data URI |
 | `_center_captions` | tools.py:1337 | 图/表标题居中 |
 | `_center_bare_images` | tools.py:1386 | 裸 `<img>` 段落居中 |
-| `_format_title_html` | tools.py:1305 | 标题页 + 模板元数据 |
+| `_format_title_html` | tools.py:1305 | 标题页 + 封面小组信息 |
 | `_layout_css` | tools.py:920 | JSON → 打印 CSS |
 | `_clean_boilerplate` | tools.py:1141 | 清除客套话 |
 | `_fix_unordered_lists_in_md` | tools.py:1148 | `- ` → `(N) ` |

@@ -1,4 +1,4 @@
-"""docgen_agent 主循环 — 分批逐节生成 + 拼接 + 格式校验。
+﻿"""docgen_agent 主循环 — 分批逐节生成 + 拼接 + 格式校验。
 
 工作流程:
     Phase 1  读取文件     — Agent 调用 read_requirement / read_output_schema / read_output_layout
@@ -25,19 +25,19 @@ from .tools import (
     _fix_unordered_lists_in_md,
     normalize_document_header,
     normalize_heading_numbering,
+    normalize_inline_section_titles,
+    normalize_caption_positions_and_numbering,
     _validate_table_captions,
     client,
     OUTPUT_DIR,
+    OUTPUT_SCHEMA_PATH,
     execute_tool,
     get_doc_structure,
     get_tools_for_phase,
-    set_source_file,
+    set_source_files,
 )
 
-CURRENT_DIR = Path(__file__).parent
-
 MAX_TRACE_EVENTS = 1000
-MAX_TRACE_TEXT = 4000
 MAX_READ_CONTEXT_CHARS = 60000
 MAX_SECTION_REQUIREMENT_CHARS = 5000
 MAX_SECTION_PROJECT_CONTEXT_CHARS = 14000
@@ -58,13 +58,8 @@ _PROJECT_CONTEXT_TOOL_NAMES = {
 
 _TRACE_LOCK = threading.RLock()
 _RUN_TRACES: dict[str, dict[str, Any]] = {}
-_INTERRUPT_FLAGS: set[str] = set()
 _TERMINATE_FLAGS: set[str] = set()
-_PENDING_HINTS: dict[str, list[str]] = {}
-
-
-class GenerationInterrupted(RuntimeError):
-    """文档生成被用户中断。"""
+_ACTIVE_STREAMS: dict[str, list[Any]] = {}
 
 
 class GenerationTerminated(RuntimeError):
@@ -76,12 +71,10 @@ def _now_iso() -> str:
 
 
 def _trim_trace_value(value: Any) -> Any:
-    if isinstance(value, str):
-        return value if len(value) <= MAX_TRACE_TEXT else value[:MAX_TRACE_TEXT] + "...[truncated]"
     if isinstance(value, dict):
         return {k: _trim_trace_value(v) for k, v in value.items()}
     if isinstance(value, list):
-        return [_trim_trace_value(v) for v in value[:50]]
+        return [_trim_trace_value(v) for v in value]
     return value
 
 
@@ -92,6 +85,7 @@ def _ensure_run_state_locked(run_id: str) -> dict[str, Any]:
             "run_id": run_id,
             "status": "running",
             "doc_type": "",
+            "task_title": "文档生成任务",
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
             "output_path": None,
@@ -108,6 +102,7 @@ def start_generation_trace(
     run_id: str,
     doc_type: str = "",
     user_hint: str = "",
+    task_title: str = "",
     *,
     reset: bool = False,
 ) -> dict[str, Any]:
@@ -115,12 +110,12 @@ def start_generation_trace(
     with _TRACE_LOCK:
         if reset or run_id not in _RUN_TRACES:
             if reset:
-                _INTERRUPT_FLAGS.discard(run_id)
                 _TERMINATE_FLAGS.discard(run_id)
             _RUN_TRACES[run_id] = {
                 "run_id": run_id,
                 "status": "running",
                 "doc_type": doc_type,
+                "task_title": task_title or doc_type or "文档生成任务",
                 "created_at": _now_iso(),
                 "updated_at": _now_iso(),
                 "output_path": None,
@@ -133,6 +128,8 @@ def start_generation_trace(
             state = _ensure_run_state_locked(run_id)
             state["status"] = "running"
             state["doc_type"] = doc_type or state.get("doc_type", "")
+            if task_title:
+                state["task_title"] = task_title
             state["updated_at"] = _now_iso()
 
     _record_trace(
@@ -156,33 +153,19 @@ def get_generation_trace(run_id: str) -> dict[str, Any] | None:
             "run_id": state["run_id"],
             "status": state["status"],
             "doc_type": state.get("doc_type", ""),
+            "task_title": state.get("task_title") or state.get("doc_type", ""),
             "created_at": state.get("created_at"),
             "updated_at": state.get("updated_at"),
             "output_path": state.get("output_path"),
             "pdf_path": state.get("pdf_path"),
             "error": state.get("error"),
-            "interrupted": run_id in _INTERRUPT_FLAGS or state["status"] in {"interrupt_requested", "interrupted"},
             "terminated": run_id in _TERMINATE_FLAGS or state["status"] in {"terminate_requested", "terminated"},
             "events": [event.copy() for event in state.get("events", [])],
         }
 
 
-def request_generation_interrupt(run_id: str) -> bool:
-    """请求中断指定运行。实际停止点在下一次模型调用返回或工具调用边界。"""
-    with _TRACE_LOCK:
-        state = _RUN_TRACES.get(run_id)
-        if state is None:
-            return False
-        _INTERRUPT_FLAGS.add(run_id)
-        state["status"] = "interrupt_requested"
-        state["updated_at"] = _now_iso()
-
-    _record_trace(run_id, "interrupt_requested", phase="run")
-    return True
-
-
 def request_generation_terminate(run_id: str) -> bool:
-    """请求终止指定运行。与 interrupt 一样是协作式停止，但状态标记为 terminated。"""
+    """请求终止指定运行，并尽快关闭正在进行的模型流。"""
     with _TRACE_LOCK:
         state = _RUN_TRACES.get(run_id)
         if state is None:
@@ -192,6 +175,7 @@ def request_generation_terminate(run_id: str) -> bool:
         state["updated_at"] = _now_iso()
 
     _record_trace(run_id, "terminate_requested", phase="run")
+    _close_active_streams(run_id)
     return True
 
 
@@ -226,6 +210,86 @@ def _record_trace(run_id: Optional[str], event_type: str, phase: str = "", **pay
         state["updated_at"] = _now_iso()
 
 
+def _record_trace_delta(
+    run_id: Optional[str],
+    event_type: str,
+    phase: str,
+    content_delta: str,
+    **payload: Any,
+) -> None:
+    """把流式 token 追加到同一条 trace 事件，前端 SSE 可即时刷新同一卡片。"""
+    if not run_id or not content_delta:
+        return
+    with _TRACE_LOCK:
+        state = _ensure_run_state_locked(run_id)
+        events = state["events"]
+        turn = payload.get("turn")
+        last = events[-1] if events else None
+        if (
+            last
+            and last.get("type") == event_type
+            and last.get("phase") == phase
+            and last.get("turn") == turn
+            and last.get("streaming") is True
+        ):
+            content = str(last.get("content", "")) + content_delta
+            last["content"] = _trim_trace_value(content)
+            last["time"] = _now_iso()
+            for key, value in payload.items():
+                last[key] = _trim_trace_value(value)
+        else:
+            event_id = state.setdefault("next_event_id", len(events) + 1)
+            state["next_event_id"] = event_id + 1
+            events.append({
+                "id": event_id,
+                "time": _now_iso(),
+                "type": event_type,
+                "phase": phase,
+                "content": _trim_trace_value(content_delta),
+                "streaming": True,
+                **{key: _trim_trace_value(value) for key, value in payload.items()},
+            })
+            if len(events) > MAX_TRACE_EVENTS:
+                del events[: len(events) - MAX_TRACE_EVENTS]
+        state["updated_at"] = _now_iso()
+
+
+def _register_active_stream(run_id: Optional[str], stream: Any) -> None:
+    if not run_id:
+        return
+    with _TRACE_LOCK:
+        _ACTIVE_STREAMS.setdefault(run_id, []).append(stream)
+
+
+def _unregister_active_stream(run_id: Optional[str], stream: Any) -> None:
+    if not run_id:
+        return
+    with _TRACE_LOCK:
+        streams = _ACTIVE_STREAMS.get(run_id)
+        if not streams:
+            return
+        try:
+            streams.remove(stream)
+        except ValueError:
+            pass
+        if not streams:
+            _ACTIVE_STREAMS.pop(run_id, None)
+
+
+def _close_active_streams(run_id: str) -> None:
+    with _TRACE_LOCK:
+        streams = list(_ACTIVE_STREAMS.get(run_id, []))
+
+    for stream in streams:
+        close = getattr(stream, "close", None)
+        if not callable(close):
+            continue
+        try:
+            close()
+        except Exception as exc:
+            logger.debug(f"关闭模型流失败: {run_id}: {exc}")
+
+
 def _safe_json_loads(raw: str) -> dict[str, Any]:
     try:
         value = json.loads(raw or "{}")
@@ -252,6 +316,129 @@ def _function_tool_calls(tool_calls: Any) -> list[ChatCompletionMessageFunctionT
     ]
 
 
+def _stream_chat_completion(
+    messages: list[ChatCompletionMessageParam],
+    *,
+    tools: list[dict[str, Any]] | None,
+    temperature: float,
+    run_id: Optional[str],
+    phase: str,
+    turn: int,
+) -> tuple[str, list[dict[str, Any]], str]:
+    """流式调用模型，实时写入 reasoning/content trace，并组装工具调用。"""
+    _check_terminated(run_id, phase)
+    kwargs: dict[str, Any] = {
+        "model": "deepseek-v4-pro",
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True,
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }
+    if tools:
+        kwargs["tools"] = _chat_tools(tools)
+
+    try:
+        stream = client.chat.completions.create(**kwargs)
+    except Exception as exc:
+        _check_terminated(run_id, phase)
+        if run_id:
+            _record_trace(run_id, "error", phase=phase, error=f"流式模型调用失败: {exc}")
+            raise RuntimeError(f"流式模型调用失败: {exc}") from exc
+        logger.warning(f"流式调用失败，退回普通调用: {exc}")
+        fallback_kwargs: dict[str, Any] = {
+            "model": "deepseek-v4-pro",
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if tools:
+            fallback_kwargs["tools"] = _chat_tools(tools)
+        _check_terminated(run_id, phase)
+        resp = client.chat.completions.create(**fallback_kwargs)
+        _check_terminated(run_id, phase)
+        msg = resp.choices[0].message
+        reasoning = getattr(msg, "reasoning_content", "") or ""
+        if reasoning:
+            _record_trace(run_id, "reasoning", phase=phase, turn=turn, content=reasoning)
+        if msg.content:
+            _record_trace(run_id, "assistant_message", phase=phase, turn=turn, content=msg.content)
+        tool_calls = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+            }
+            for tc in _function_tool_calls(msg.tool_calls)
+        ]
+        return msg.content or "", tool_calls, reasoning
+
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_call_parts: dict[int, dict[str, Any]] = {}
+
+    _register_active_stream(run_id, stream)
+    try:
+        for chunk in stream:
+            _check_terminated(run_id, phase)
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            reasoning_delta = getattr(delta, "reasoning_content", None)
+            if reasoning_delta:
+                reasoning_parts.append(reasoning_delta)
+                _record_trace_delta(
+                    run_id,
+                    "reasoning",
+                    phase,
+                    reasoning_delta,
+                    turn=turn,
+                )
+
+            content_delta = getattr(delta, "content", None)
+            if content_delta:
+                content_parts.append(content_delta)
+                _record_trace_delta(
+                    run_id,
+                    "assistant_message",
+                    phase,
+                    content_delta,
+                    turn=turn,
+                )
+
+            for tool_delta in getattr(delta, "tool_calls", None) or []:
+                index = int(getattr(tool_delta, "index", len(tool_call_parts)) or 0)
+                entry = tool_call_parts.setdefault(
+                    index,
+                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                )
+                if getattr(tool_delta, "id", None):
+                    entry["id"] = tool_delta.id
+                if getattr(tool_delta, "type", None):
+                    entry["type"] = tool_delta.type
+                function_delta = getattr(tool_delta, "function", None)
+                if function_delta:
+                    if getattr(function_delta, "name", None):
+                        entry["function"]["name"] += function_delta.name
+                    if getattr(function_delta, "arguments", None):
+                        entry["function"]["arguments"] += function_delta.arguments
+    except Exception:
+        _check_terminated(run_id, phase)
+        raise
+    finally:
+        _unregister_active_stream(run_id, stream)
+        close = getattr(stream, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+    tool_calls = [
+        call for _, call in sorted(tool_call_parts.items())
+        if call.get("function", {}).get("name")
+    ]
+    return "".join(content_parts), tool_calls, "".join(reasoning_parts)
+
+
 def _append_project_context(chunks: list[str], tool_name: str, result: str) -> None:
     if tool_name not in _PROJECT_CONTEXT_TOOL_NAMES:
         return
@@ -268,39 +455,15 @@ def _project_context_tool_for_doc_type(doc_type: str) -> str:
     return ""
 
 
-def _check_interrupted(run_id: Optional[str], phase: str = "") -> None:
+def _check_terminated(run_id: Optional[str], phase: str = "") -> None:
     if not run_id:
         return
     with _TRACE_LOCK:
         should_terminate = run_id in _TERMINATE_FLAGS
-        should_interrupt = run_id in _INTERRUPT_FLAGS
     if should_terminate:
         _set_run_status(run_id, "terminated")
         _record_trace(run_id, "terminated", phase=phase)
         raise GenerationTerminated(f"文档生成已终止: {run_id}")
-    if should_interrupt:
-        _set_run_status(run_id, "interrupted")
-        _record_trace(run_id, "interrupted", phase=phase)
-        raise GenerationInterrupted(f"文档生成已中断: {run_id}")
-
-
-def append_generation_hint(run_id: str, hint: str) -> bool:
-    """在生成过程中追加用户提示词。下一轮 LLM 调用会作为 user 消息注入。"""
-    with _TRACE_LOCK:
-        state = _RUN_TRACES.get(run_id)
-        if state is None or state["status"] not in ("running",):
-            return False
-        _PENDING_HINTS.setdefault(run_id, []).append(hint)
-    _record_trace(run_id, "hint_appended", phase="run", hint=hint)
-    return True
-
-
-def _consume_pending_hints(run_id: Optional[str]) -> list[str]:
-    """取出并清空指定运行的待注入提示词。"""
-    if not run_id:
-        return []
-    with _TRACE_LOCK:
-        return _PENDING_HINTS.pop(run_id, [])
 
 
 # ============================================================
@@ -339,7 +502,7 @@ SECTION_SYSTEM_PROMPT = """\
 - 章节路径: {section_path}
 - 章节描述: {section_description}
 
-## 本章节的完整结构定义（含所有子章节）
+## output_schema.json 章节定义与内容格式规则
 ```json
 {section_schema}
 ```
@@ -350,33 +513,27 @@ SECTION_SYSTEM_PROMPT = """\
 ## {context_label}
 {context_text}
 
-## 用户额外指示
+## 用户额外指示（最高优先级）
 {user_hint}
 
-## 写作要求（以下规则必须严格遵守）
-1. 只输出本章节组（含子章节）的 Markdown 正文，不要输出文档总标题和元数据行；总标题和元数据由拼接阶段统一添加。
-2. 输出必须从该章节组的标题行开始，并严格遵循上述 output_schema.json 结构；required:true 的章节必须生成，tips 中的内容要完整覆盖。
-3. 四级及更深标题必须使用 Markdown 标题和四段/多段十进制编号，例如 `##### 3.1.1.2 字段校验`；严禁把 `(1) 标题`、`(2) 标题` 当作标题使用，括号编号只能用于正文枚举。
-4. 所有格式、排版、标题层级、元数据字段、图表标题、表格标题、编号、列表和分页规则均以 output_layout.json 为唯一依据，不得自行创造或覆盖格式规则。
-5. 如 schema 要求图表，按 output_schema.json 的 uml_diagram_guide 和该章节 tools 字段选择并调用工具；图片路径必须直接使用工具返回值。
-6. Markdown 表格必须是可解析的标准表格：表头行、对齐行、数据行的列数必须一致；单元格内不要使用未转义的竖线；表格标题必须是 `**表X-Y：具体表名**`，不得使用“表格说明”等泛化标题。
-7. 内容必须详实、专业，每个章节都要达到可独立审阅的深度，并结合项目真实需求或代码信息展开。
-8. 生成架构设计文档时，必须基于读取阶段获得的真实目录、依赖、路由、数据模型和部署配置展开；缺失项标注“待确认”，不要编造。
-9. 生成测试文档时，必须基于读取阶段获得的现有测试、接口、数据模型、CI 配置和部署配置展开；缺失项标注“待补充”，不要编造。
-10. 严禁输出任何客套话或 AI 声明，直接输出文档正文。
+## 写作任务
+1. 只输出本章节组（含子章节）的 Markdown 正文，不要输出文档总标题和封面小组信息；总标题和封面小组信息由拼接阶段统一添加。
+2. 输出必须从该章节组的标题行开始，并遵循上方 schema；required:true 的章节必须生成，tips 中的内容要完整覆盖。
+3. 如 schema 要求图表，按该章节 tools 字段选择并调用工具；图片路径直接使用工具返回值。
+4. 内容格式按 schema 的 content_format_rules 执行，视觉布局按 output_layout.json 摘录执行。
+5. 内容必须详实、专业，并结合项目真实需求或代码信息展开；缺失项按文档类型标注“待确认”或“待补充”，不要编造。
+6. 严禁输出任何客套话或 AI 声明，直接输出文档正文。
 """
 
 STITCH_SYSTEM_PROMPT = """\
 你是一个专业的软件工程文档审校专家。你的任务是将多个章节片段拼接成一份完整规范的文档。
 
-## 要求（按优先级排列）
-1. 全文第一行必须保留为一级 Markdown 文档标题；标题之后立即按 output_layout.json 的 document_meta.fields 顺序生成元数据行。
-2. 所有格式、排版、标题层级、图表标题、表格标题、编号、列表和分页规则均以 output_layout.json 为唯一依据。
-3. 删除正文中重复或残留的元数据行、孤立格式标记、客套话和 AI 声明。
-4. 表格必须保持标准 Markdown 结构：表头行、对齐行、数据行列数一致；发现坏表格时修复列数和表头，不要把表格降级成普通文本。
-5. 图片路径必须使用工具返回的相对路径；如出现输出目录前缀，只保留相对 output_docs 的路径。
-6. 图表与表格的标题、位置和编号必须按 output_layout.json 对应配置修正。
-7. 输出完整 Markdown 文档，严禁客套话或 AI 声明。
+## 审校任务
+1. 拼接章节片段，保留完整 Markdown 文档。
+2. 按 output_schema.json 处理内容结构，按 output_layout.json 处理布局规范。
+3. 删除重复封面信息、孤立格式标记、客套话和 AI 声明。
+4. 修复明显损坏的 Markdown 表格和图片路径。
+5. 输出完整 Markdown 文档，严禁客套话或 AI 声明。
 
 ## output_layout.json 规范摘录
 {layout_rules}
@@ -384,7 +541,6 @@ STITCH_SYSTEM_PROMPT = """\
 ## 文档结构（output_schema.json）
 {doc_structure_summary}
 """
-
 
 def _layout_prompt_excerpt(layout: str) -> str:
     """生成给模型看的布局规范摘录，内容值全部来自 output_layout.json。"""
@@ -396,26 +552,40 @@ def _layout_prompt_excerpt(layout: str) -> str:
     keys = (
         "document_meta",
         "headings",
+        "body_text",
         "figures",
         "tables",
         "lists",
-        "page_breaks",
-        "pdf_rendering",
         "rendering_conventions",
-        "boilerplate_rules",
     )
     excerpt = {key: layout_obj.get(key) for key in keys if key in layout_obj}
     return json.dumps(excerpt, ensure_ascii=False, indent=2)
 
 
+def _schema_content_format_rules() -> dict[str, Any]:
+    try:
+        schema_obj = json.loads(OUTPUT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    rules = schema_obj.get("content_format_rules", {})
+    return rules if isinstance(rules, dict) else {}
+
+
 # ============================================================
 # Phase 1: 读取文件
 # ============================================================
-def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str, str, str, str]:
+def _phase_read_files(
+    doc_type: str,
+    user_hint: str = "",
+    run_id: Optional[str] = None,
+) -> tuple[str, str, str, str]:
     """Agent 方式读取 requirement, schema, layout 和项目上下文。"""
+    read_user_prompt = f"请读取生成 {doc_type} 所需的所有文件。"
+    if user_hint.strip():
+        read_user_prompt += f"\n\n[最高优先级用户提示]\n{user_hint.strip()[:2000]}"
     messages: list[ChatCompletionMessageParam] = [
         _chat_message({"role": "system", "content": READ_PHASE_PROMPT.format(doc_type=doc_type)}),
-        _chat_message({"role": "user", "content": f"请读取生成 {doc_type} 所需的所有文件。"}),
+        _chat_message({"role": "user", "content": read_user_prompt}),
     ]
 
     requirement = ""
@@ -425,49 +595,42 @@ def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str,
     read_completed = False
 
     for turn in range(6):
-        _check_interrupted(run_id, "read_files")
+        _check_terminated(run_id, "read_files")
         logger.info(f"  [读取阶段 Turn {turn}] 等待 LLM...")
         _record_trace(run_id, "llm_request", phase="read_files", turn=turn, action="读取需求、结构和排版规范")
-        resp = client.chat.completions.create(
-            model="deepseek-v4-pro",
-            messages=messages,
-            tools=_chat_tools(get_tools_for_phase("read")),
+        msg_content, tool_calls, reasoning_content = _stream_chat_completion(
+            messages,
+            tools=get_tools_for_phase("read"),
             temperature=0.0,
+            run_id=run_id,
+            phase="read_files",
+            turn=turn,
         )
-        _check_interrupted(run_id, "read_files")
-        msg = resp.choices[0].message
-        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-            _record_trace(run_id, "reasoning", phase="read_files", turn=turn, content=msg.reasoning_content)
-        if msg.content:
-            _record_trace(run_id, "assistant_message", phase="read_files", turn=turn, content=msg.content)
+        _check_terminated(run_id, "read_files")
 
-        tool_calls = _function_tool_calls(msg.tool_calls)
         if tool_calls:
-            names = [tc.function.name for tc in tool_calls]
+            for idx, tc in enumerate(tool_calls):
+                if not tc.get("id"):
+                    tc["id"] = f"tool_{turn}_{idx}_{tc['function']['name']}"
+            names = [tc["function"]["name"] for tc in tool_calls]
             logger.info(f"  [读取阶段] 调用: {names}")
             _record_trace(run_id, "tool_calls_planned", phase="read_files", turn=turn, tools=names)
 
-            tc_list: list[dict[str, Any]] = []
-            for tc in tool_calls:
-                tc_list.append({
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                })
-            assistant_msg: dict[str, Any] = {"role": "assistant", "content": msg.content or None, "tool_calls": tc_list}
-            if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-                assistant_msg["reasoning_content"] = msg.reasoning_content
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": msg_content or None, "tool_calls": tool_calls}
+            if reasoning_content:
+                assistant_msg["reasoning_content"] = reasoning_content
             messages.append(_chat_message(assistant_msg))
 
             for tc in tool_calls:
-                _check_interrupted(run_id, "read_files")
-                func_name = tc.function.name
-                func_args = _safe_json_loads(tc.function.arguments)
+                _check_terminated(run_id, "read_files")
+                func_name = tc["function"]["name"]
+                tool_call_id = tc["id"]
+                func_args = _safe_json_loads(tc["function"].get("arguments", ""))
                 _record_trace(
                     run_id,
                     "tool_call",
                     phase="read_files",
-                    tool_call_id=tc.id,
+                    tool_call_id=tool_call_id,
                     name=func_name,
                     arguments=func_args,
                 )
@@ -476,18 +639,24 @@ def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str,
                     run_id,
                     "tool_result",
                     phase="read_files",
-                    tool_call_id=tc.id,
+                    tool_call_id=tool_call_id,
                     name=func_name,
                     result=result,
                 )
-                _check_interrupted(run_id, "read_files")
+                _check_terminated(run_id, "read_files")
                 messages.append(_chat_message({
-                    "role": "tool", "tool_call_id": tc.id, "content": result,
+                    "role": "tool", "tool_call_id": tool_call_id, "content": result,
                 }))
                 if func_name == "read_requirement":
                     requirement = result
                 elif func_name == "read_output_schema":
-                    schema = result
+                    if result.lstrip().startswith('{"error"'):
+                        messages.append(_chat_message({
+                            "role": "user",
+                            "content": f"请重新调用 read_output_schema，并传入 doc_type=\"{doc_type}\"。",
+                        }))
+                    else:
+                        schema = result
                 elif func_name == "read_output_layout":
                     layout = result
                 else:
@@ -501,8 +670,8 @@ def _phase_read_files(doc_type: str, run_id: Optional[str] = None) -> tuple[str,
                 break
         else:
             # LLM 直接输出文字，追加到对话继续
-            if msg.content:
-                messages.append(_chat_message({"role": "assistant", "content": msg.content}))
+            if msg_content:
+                messages.append(_chat_message({"role": "assistant", "content": msg_content}))
             messages.append(_chat_message({"role": "user", "content": "请继续调用工具读取文件。"}))
 
     fallback_calls = []
@@ -587,67 +756,48 @@ def _call_llm(
         _chat_message({"role": "system", "content": system_prompt}),
         _chat_message({"role": "user", "content": user_prompt}),
     ]
-    tool_params = _chat_tools(tools) if tools else None
 
     max_turns = 15  # 留够图表渲染（可能多次重试）+ 联网搜索 + 写正文的轮次
     for turn in range(max_turns):
-        _check_interrupted(run_id, phase)
-        # 注入用户追加的提示词
-        hints = _consume_pending_hints(run_id)
-        for hint in hints:
-            msgs.append(_chat_message({"role": "user", "content": f"[用户补充指示] {hint}"}))
+        _check_terminated(run_id, phase)
         _record_trace(run_id, "llm_request", phase=phase, turn=turn, has_tools=bool(tools))
-        if tool_params:
-            resp = client.chat.completions.create(
-                model="deepseek-v4-pro",
-                messages=msgs,
-                tools=tool_params,
-                temperature=0.4,
-            )
-        else:
-            resp = client.chat.completions.create(
-                model="deepseek-v4-pro",
-                messages=msgs,
-                temperature=0.4,
-            )
-        _check_interrupted(run_id, phase)
-        msg = resp.choices[0].message
-        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-            _record_trace(run_id, "reasoning", phase=phase, turn=turn, content=msg.reasoning_content)
-        if msg.content:
-            _record_trace(run_id, "assistant_message", phase=phase, turn=turn, content=msg.content)
+        msg_content, tool_calls, reasoning_content = _stream_chat_completion(
+            msgs,
+            tools=tools,
+            temperature=0.4,
+            run_id=run_id,
+            phase=phase,
+            turn=turn,
+        )
+        _check_terminated(run_id, phase)
 
-        tool_calls = _function_tool_calls(msg.tool_calls)
         if tool_calls:
             # 处理工具调用
-            tc_list: list[dict[str, Any]] = []
-            for tc in tool_calls:
-                tc_list.append({
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                })
-            assistant_msg: dict[str, Any] = {"role": "assistant", "content": msg.content or None, "tool_calls": tc_list}
-            if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-                assistant_msg["reasoning_content"] = msg.reasoning_content
+            for idx, tc in enumerate(tool_calls):
+                if not tc.get("id"):
+                    tc["id"] = f"tool_{turn}_{idx}_{tc['function']['name']}"
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": msg_content or None, "tool_calls": tool_calls}
+            if reasoning_content:
+                assistant_msg["reasoning_content"] = reasoning_content
             msgs.append(_chat_message(assistant_msg))
             _record_trace(
                 run_id,
                 "tool_calls_planned",
                 phase=phase,
                 turn=turn,
-                tools=[tc.function.name for tc in tool_calls],
+                tools=[tc["function"]["name"] for tc in tool_calls],
             )
 
             for tc in tool_calls:
-                _check_interrupted(run_id, phase)
-                func_name = tc.function.name
-                func_args = _safe_json_loads(tc.function.arguments)
+                _check_terminated(run_id, phase)
+                func_name = tc["function"]["name"]
+                tool_call_id = tc["id"]
+                func_args = _safe_json_loads(tc["function"].get("arguments", ""))
                 _record_trace(
                     run_id,
                     "tool_call",
                     phase=phase,
-                    tool_call_id=tc.id,
+                    tool_call_id=tool_call_id,
                     name=func_name,
                     arguments=func_args,
                 )
@@ -656,17 +806,17 @@ def _call_llm(
                     run_id,
                     "tool_result",
                     phase=phase,
-                    tool_call_id=tc.id,
+                    tool_call_id=tool_call_id,
                     name=func_name,
                     result=result,
                 )
-                _check_interrupted(run_id, phase)
+                _check_terminated(run_id, phase)
                 msgs.append(_chat_message({
-                    "role": "tool", "tool_call_id": tc.id, "content": result,
+                    "role": "tool", "tool_call_id": tool_call_id, "content": result,
                 }))
         else:
             # 直接返回内容
-            content = msg.content or ""
+            content = msg_content or ""
             if content.strip():
                 return content
             else:
@@ -722,7 +872,11 @@ def _generate_section_group(
     context_label = "前后章节（保证连贯性）"
     context_text = f"上一章: {prev_title or '(无，这是第一章)'}\n下一章: {next_title or '(无，这是最后一章)'}"
     phase = f"generate_section:{group['title']}"
-    group_schema = json.dumps(group.get("schema", group), ensure_ascii=False, indent=2)
+    schema_payload = {
+        "content_format_rules": _schema_content_format_rules(),
+        "section": group.get("schema", group),
+    }
+    group_schema = json.dumps(schema_payload, ensure_ascii=False, indent=2)
     layout_excerpt = _layout_prompt_excerpt(layout)
 
     prompt = SECTION_SYSTEM_PROMPT.format(
@@ -800,6 +954,7 @@ def run_agent(
     doc_type: str = "需求规格说明书",
     user_hint: str = "",
     source_file: Optional[str] = None,
+    source_files: Optional[list[str]] = None,
     run_id: Optional[str] = None,
 ) -> Path:
     """完整的文档生成流程。
@@ -807,17 +962,23 @@ def run_agent(
     Args:
         doc_type: "需求规格说明书" | "架构设计文档" | "测试文档"
         user_hint: 前端用户的提示词
-        source_file: 前端上传的需求文件路径（txt/md），默认用 requirement.md
-        run_id: 可选运行 ID，用于读取 trace 或请求中断
+        source_file: 前端上传的单个需求文件路径（兼容旧接口）
+        source_files: 前端上传的需求/依赖文件路径列表，默认用 agent_input/requirement.md
+        run_id: 可选任务 ID，用于读取 trace 或请求终止
     """
     if run_id and get_generation_trace(run_id) is None:
         start_generation_trace(run_id, doc_type=doc_type, user_hint=user_hint)
 
     try:
-        _check_interrupted(run_id, "run")
-        if source_file:
-            set_source_file(source_file)
-            _record_trace(run_id, "source_file_set", phase="run", source_file=source_file)
+        _check_terminated(run_id, "run")
+        resolved_source_files = list(source_files or ([] if source_file is None else [source_file]))
+        set_source_files(resolved_source_files)
+        _record_trace(
+            run_id,
+            "source_files_set",
+            phase="run",
+            source_files=resolved_source_files or ["agent_input/requirement.md"],
+        )
 
         logger.info(f"文档类型: {doc_type}")
         logger.info(f"输出目录: {OUTPUT_DIR}")
@@ -826,10 +987,14 @@ def run_agent(
         logger.info("=" * 50)
         logger.info("Phase 1: 读取文件")
         _record_trace(run_id, "phase_started", phase="read_files", message="读取需求、结构和排版规范")
-        requirement, _schema_text, layout, project_context = _phase_read_files(doc_type, run_id=run_id)
+        requirement, _schema_text, layout, project_context = _phase_read_files(
+            doc_type,
+            user_hint=user_hint,
+            run_id=run_id,
+        )
 
         # ── Phase 2: 拆解章节（按一级标题分组）──
-        _check_interrupted(run_id, "split_sections")
+        _check_terminated(run_id, "split_sections")
         logger.info("=" * 50)
         logger.info("Phase 2: 拆解章节")
         _record_trace(run_id, "phase_started", phase="split_sections")
@@ -850,7 +1015,7 @@ def run_agent(
         generated: list[str] = []
 
         for i, group in enumerate(top_sections):
-            _check_interrupted(run_id, "generate_sections")
+            _check_terminated(run_id, "generate_sections")
             prev_title = top_sections[i - 1]["title"] if i > 0 else ""
             next_title = top_sections[i + 1]["title"] if i + 1 < len(top_sections) else ""
 
@@ -879,7 +1044,7 @@ def run_agent(
         _record_trace(run_id, "phase_completed", phase="generate_sections", section_count=len(generated))
 
         # ── Phase 3.5: Schema 合规校验 + 缺失章节重生成 ──
-        _check_interrupted(run_id, "validate")
+        _check_terminated(run_id, "validate")
         logger.info("=" * 50)
         logger.info("Phase 3.5: Schema 合规校验")
         _record_trace(run_id, "phase_started", phase="validate")
@@ -915,7 +1080,7 @@ def run_agent(
                 break
 
         # ── Phase 4: 拼接 + 校验 ──
-        _check_interrupted(run_id, "stitch")
+        _check_terminated(run_id, "stitch")
         logger.info("=" * 50)
         logger.info("Phase 4: 拼接 + 格式校验")
         _record_trace(run_id, "phase_started", phase="stitch")
@@ -932,8 +1097,8 @@ def run_agent(
         full_body = "\n".join(parts)
         _record_trace(run_id, "document_stitched", phase="stitch", content=full_body)
 
-        # 全文拼接只做确定性规范化，避免最终 LLM 审校压缩正文或引入重复元数据。
-        final_doc = normalize_document_header(full_body, doc_type)
+        # 全文拼接只做确定性规范化，避免最终 LLM 审校压缩正文或引入重复封面信息。
+        final_doc = normalize_document_header(full_body, doc_type, user_hint)
         _record_trace(
             run_id,
             "phase_completed",
@@ -943,7 +1108,7 @@ def run_agent(
         )
 
         # ── Phase 5: 保存 Markdown ──
-        _check_interrupted(run_id, "save")
+        _check_terminated(run_id, "save")
         logger.info("=" * 50)
         logger.info("Phase 5: 保存 Markdown")
         _record_trace(run_id, "phase_started", phase="save")
@@ -951,16 +1116,27 @@ def run_agent(
         file_name = f"{doc_type}_{ts}.md"
         final_doc = normalize_heading_numbering(final_doc)
         final_doc = _fix_unordered_lists_in_md(final_doc)
+        final_doc = normalize_inline_section_titles(final_doc)
+        final_doc, caption_issues = normalize_caption_positions_and_numbering(final_doc)
         final_doc, table_issues = _validate_table_captions(final_doc)
-        for issue in table_issues:
-            logger.warning(f"  表格修复: {issue}")
-            _record_trace(run_id, "table_repaired", phase="save", message=issue)
-        md_output_path = Path(execute_tool("save_document", {"file_name": file_name, "content": final_doc, "doc_type": doc_type}))
+        final_doc, caption_issues_after_table_repair = normalize_caption_positions_and_numbering(final_doc)
+        for issue in [*caption_issues, *table_issues, *caption_issues_after_table_repair]:
+            logger.warning(f"  格式修复: {issue}")
+            _record_trace(run_id, "format_repaired", phase="save", message=issue)
+        md_output_path = Path(execute_tool(
+            "save_document",
+            {
+                "file_name": file_name,
+                "content": final_doc,
+                "doc_type": doc_type,
+                "metadata_source": user_hint,
+            },
+        ))
         logger.info(f"Markdown 已保存至: {md_output_path}")
         _record_trace(run_id, "phase_completed", phase="save", markdown_path=str(md_output_path))
 
         # ── Phase 6: 转 PDF ──
-        _check_interrupted(run_id, "convert_pdf")
+        _check_terminated(run_id, "convert_pdf")
         logger.info("=" * 50)
         logger.info("Phase 6: 转 PDF")
         _record_trace(run_id, "phase_started", phase="convert_pdf", markdown_path=str(md_output_path))
@@ -986,10 +1162,6 @@ def run_agent(
         logger.info(f"文档生成被终止: {run_id}")
         _set_run_status(run_id, "terminated")
         raise
-    except GenerationInterrupted:
-        logger.info(f"文档生成被中断: {run_id}")
-        _set_run_status(run_id, "interrupted")
-        raise
     except Exception as exc:
         _set_run_status(run_id, "failed", error=str(exc))
         _record_trace(run_id, "error", phase="run", error=str(exc))
@@ -1006,3 +1178,4 @@ if __name__ == "__main__":
     logger.info(f"智能体启动，目标: {DOC_TYPE}")
     path = run_agent(doc_type=DOC_TYPE, user_hint=HINT)
     logger.info(f"完成！文件: {path}")
+

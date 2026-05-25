@@ -25,8 +25,9 @@ import os
 import re
 import sys
 import tomllib
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Iterable, Optional, cast
 
 from loguru import logger
 from openai import OpenAI
@@ -34,12 +35,16 @@ from openai import OpenAI
 try:
     from ..config import API_KEY
 except ImportError:
-    _SERVER_DIR = Path(__file__).parent.parent.parent
+    _SERVER_DIR = Path(__file__).parent.parent
     sys.path.insert(0, str(_SERVER_DIR))
     from config import API_KEY
 
 CURRENT_DIR = Path(__file__).parent
-PROJECT_ROOT = CURRENT_DIR.parents[2]
+PROJECT_ROOT = CURRENT_DIR.parents[1]
+AGENT_INPUT_DIR = CURRENT_DIR / "agent_input"
+OUTPUT_SCHEMA_PATH = AGENT_INPUT_DIR / "output_schema.json"
+OUTPUT_LAYOUT_PATH = AGENT_INPUT_DIR / "output_layout.json"
+DEFAULT_REQUIREMENT_PATH = AGENT_INPUT_DIR / "requirement.md"
 OUTPUT_DIR = CURRENT_DIR / "output_docs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -91,22 +96,48 @@ _MAX_TOOL_CHARS = 20000
 # ============================================================
 # 预加载 — 静态资源
 # ============================================================
-with open(CURRENT_DIR / "output_schema.json", "r", encoding="utf-8") as f:
+with open(OUTPUT_SCHEMA_PATH, "r", encoding="utf-8") as f:
     _OUTPUT_SCHEMA = json.load(f)
 
-_OUTPUT_LAYOUT = (CURRENT_DIR / "output_layout.json").read_text(encoding="utf-8")
+_OUTPUT_LAYOUT = OUTPUT_LAYOUT_PATH.read_text(encoding="utf-8")
 
-# 需求源文件路径 — 可在运行时由前端覆盖
-_source_md_path: Path = CURRENT_DIR / "requirement.md"
-_source_md_content: str = _source_md_path.read_text(encoding="utf-8")
+_DEFAULT_SOURCE_CONTENT = DEFAULT_REQUIREMENT_PATH.read_text(encoding="utf-8")
+_source_md_paths_ctx: ContextVar[tuple[str, ...]] = ContextVar("docgen_source_paths", default=(str(DEFAULT_REQUIREMENT_PATH),))
+_source_md_content_ctx: ContextVar[str] = ContextVar(
+    "docgen_source_content",
+    default=f"### 默认需求文件：{DEFAULT_REQUIREMENT_PATH.name}\n{_DEFAULT_SOURCE_CONTENT}",
+)
+
+_LEGACY_DOCUMENT_META_KEYS = ("文档编号", "版本号", "编制日期", "文档状态")
+
+
+def _source_file_block(path: Path) -> str:
+    content = path.read_text(encoding="utf-8", errors="replace")
+    return f"### 用户上传依赖文件：{path.name}\n{content}"
 
 
 def set_source_file(path: str | Path) -> None:
     """设置需求源文件（前端上传的 txt/md）。"""
-    global _source_md_path, _source_md_content
-    _source_md_path = Path(path)
-    _source_md_content = _source_md_path.read_text(encoding="utf-8")
-    logger.info(f"需求源文件已切换为: {_source_md_path}")
+    set_source_files([path])
+
+
+def set_source_files(paths: Iterable[str | Path] | None = None) -> None:
+    """设置当前运行的需求/依赖文件，使用 ContextVar 避免并发任务互相污染。"""
+    path_list = [Path(path) for path in (paths or []) if path]
+    if not path_list:
+        _source_md_paths_ctx.set((str(DEFAULT_REQUIREMENT_PATH),))
+        _source_md_content_ctx.set(f"### 默认需求文件：{DEFAULT_REQUIREMENT_PATH.name}\n{_DEFAULT_SOURCE_CONTENT}")
+        logger.info(f"需求源文件已重置为默认: {DEFAULT_REQUIREMENT_PATH}")
+        return
+
+    blocks = [
+        "以下用户上传依赖文件与提示词属于最高优先级输入；若与默认需求或项目上下文冲突，以用户上传内容为准。"
+    ]
+    for source_path in path_list:
+        blocks.append(_source_file_block(source_path))
+    _source_md_paths_ctx.set(tuple(str(path) for path in path_list))
+    _source_md_content_ctx.set("\n\n".join(blocks))
+    logger.info(f"需求源文件已切换为: {', '.join(str(path) for path in path_list)}")
 
 
 # ============================================================
@@ -135,10 +166,10 @@ TOOLS: list[ToolDefinition] = [
                     "doc_type": {
                         "type": "string",
                         "enum": ["需求规格说明书", "架构设计文档", "测试文档"],
-                        "description": "目标文档类型，不传则返回全部。",
+                        "description": "目标文档类型。必须传入，工具只返回该类型对应规范。",
                     }
                 },
-                "required": [],
+                "required": ["doc_type"],
             },
         },
     },
@@ -398,21 +429,24 @@ ToolHandler = Callable[[dict], str]
 
 def _handle_read_requirement(_arguments: dict) -> str:
     logger.info("   read_requirement → 返回需求文档")
-    return _source_md_content
+    return _source_md_content_ctx.get()
 
 
 def _handle_read_output_schema(arguments: dict) -> str:
     doc_type = arguments.get("doc_type")
     if not doc_type:
-        logger.info("   read_output_schema (全部)")
-        return json.dumps(_OUTPUT_SCHEMA, ensure_ascii=False, indent=2)
+        logger.warning("   read_output_schema 缺少 doc_type，拒绝返回完整 schema")
+        return json.dumps(
+            {"error": "read_output_schema 必须传入 doc_type，只允许读取当前目标文档规范。"},
+            ensure_ascii=False,
+        )
 
     logger.info(f"   read_output_schema(doc_type='{doc_type}')")
     for doc in _OUTPUT_SCHEMA.get("documents", []):
         if doc.get("doc_type") == doc_type:
             slim = {
                 "supported_output_formats": _OUTPUT_SCHEMA.get("supported_output_formats"),
-                "rendering_conventions": _OUTPUT_SCHEMA.get("rendering_conventions"),
+                "content_format_rules": _OUTPUT_SCHEMA.get("content_format_rules"),
                 "global_tips": _OUTPUT_SCHEMA.get("global_tips"),
                 "selected_document": doc,
             }
@@ -429,13 +463,17 @@ def _handle_save_document(arguments: dict) -> str:
     file_name = Path(arguments.get("file_name", "output.md")).name
     content = arguments.get("content", "")
     doc_type = str(arguments.get("doc_type", ""))
+    metadata_source = str(arguments.get("metadata_source", ""))
     if doc_type:
-        content = normalize_document_header(content, doc_type)
+        content = normalize_document_header(content, doc_type, metadata_source)
     content = normalize_heading_numbering(content)
     content = _fix_unordered_lists_in_md(content)
+    content = normalize_inline_section_titles(content)
+    content, caption_issues = normalize_caption_positions_and_numbering(content)
     content, table_issues = _validate_table_captions(content)
-    for issue in table_issues:
-        logger.warning(f"   save_document 表格修复: {issue}")
+    content, caption_issues_after_table_repair = normalize_caption_positions_and_numbering(content)
+    for issue in [*caption_issues, *table_issues, *caption_issues_after_table_repair]:
+        logger.warning(f"   save_document 格式修复: {issue}")
     output_path = OUTPUT_DIR / file_name
     output_path.write_text(content, encoding="utf-8")
     logger.info(f"   save_document → {output_path}")
@@ -986,13 +1024,13 @@ def read_test_context() -> str:
             "单元测试：核心算法、数据转换、工具函数、边界条件。",
             "接口测试：FastAPI 路由、请求参数、响应结构、异常状态码。",
             "集成测试：文档生成流程、LLM 工具调用、Markdown/PDF 输出链路。",
-            "前端测试：文档生成页面、状态轮询、下载、中断、追加提示。",
+            "前端测试：文档生成页面、状态轮询、下载、中断、终止。",
             "回归测试：表格修复、图表渲染、输出 schema/layout 约束。",
         ],
         "risk_areas": [
             "外部渲染服务或联网搜索失败时的降级行为。",
             "Markdown 表格列数不一致、单元格未转义竖线导致 PDF 渲染异常。",
-            "长文档生成过程中的中断、终止和追加提示状态一致性。",
+            "长文档生成过程中的中断、终止状态一致性。",
             "上传文件路径和 output_docs 下载路径的安全校验。",
         ],
     }
@@ -1214,6 +1252,7 @@ def _layout_css() -> str:
     tff = font["title_font_fallback"]
     mf = font["mono_font"]
     mff = font["mono_font_fallback"]
+    body_align = "justify" if body["alignment"] == "justified" else body["alignment"]
 
     # 标题 CSS
     heading_css_parts = []
@@ -1268,7 +1307,7 @@ body {{
     font-family: "{bff}", "{bf}", serif;
     font-size: {font["body_size"]};
     line-height: {body["line_spacing"]};
-    text-align: {body["alignment"]};
+    text-align: {body_align};
 }}
 
 /* ===== 段落 ===== */
@@ -1300,7 +1339,7 @@ p {{
     text-indent: 0;
 }}
 
-/* ===== 文档元数据（版本号、日期、状态）===== */
+/* ===== 封面小组信息（班级、组长、组员、日期）===== */
 .doc-meta {{
     text-align: {doc_meta["alignment"]};
     font-family: "{bff}", "{bf}", serif;
@@ -1323,6 +1362,9 @@ img {{
     max-height: {pdf_cfg["image_max_height"]};
     width: auto;
     height: auto;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
     object-fit: contain;
 }}
 
@@ -1337,6 +1379,9 @@ figure img, .figure-container img {{
     max-width: {pdf_cfg["figure_image_max_width"]};
     max-height: {pdf_cfg["figure_image_max_height"]};
     height: auto;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
 }}
 
 /* 图表所在的段落不缩进 */
@@ -1348,6 +1393,7 @@ figcaption, .figcaption {{
     font-size: {figs["font_size"]};
     text-align: center;
     margin-top: {pdf_cfg["caption_margin_top"]};
+    margin-bottom: {pdf_cfg.get("caption_margin_bottom", "0")};
     text-indent: 0;
 }}
 
@@ -1489,6 +1535,367 @@ def _fix_unordered_lists_in_md(md_text: str) -> str:
     return "".join(parts)
 
 
+def normalize_inline_section_titles(md_text: str) -> str:
+    """把正文小项中的标题性标签拆成独立行，避免标题和正文挤在同一段。"""
+    import re as _re
+
+    marker_re = r"(?:[a-zA-Z]|[0-9]+)[.、．)]|[（(][0-9]+[）)]"
+    line_re = _re.compile(
+        rf"^(?P<indent>\s*)(?P<marker>{marker_re})\s*(?P<title>.+?)[：:]\s*(?P<body>\S.*)$"
+    )
+
+    def _should_split(title: str) -> bool:
+        plain = _re.sub(r"[*_`]+", "", title).strip()
+        if not plain or len(plain) > 40:
+            return False
+        if _re.search(r"[。；;!?！？]$", plain):
+            return False
+        return bool(title.strip().startswith("**") or len(plain) <= 24)
+
+    parts = _re.split(r"(```.*?```)", md_text, flags=_re.DOTALL)
+    for part_index in range(0, len(parts), 2):
+        fixed: list[str] = []
+        for line in parts[part_index].split("\n"):
+            stripped = line.strip()
+            if (
+                not stripped
+                or stripped.startswith("#")
+                or stripped.startswith("|")
+                or stripped.startswith("![")
+                or _caption_kind_from_line(stripped)
+            ):
+                fixed.append(line)
+                continue
+
+            match = line_re.match(line)
+            if not match or not _should_split(match.group("title")):
+                fixed.append(line)
+                continue
+
+            indent = match.group("indent")
+            marker = match.group("marker")
+            title = match.group("title").strip()
+            body = match.group("body").strip()
+            if fixed and fixed[-1].strip():
+                fixed.append("")
+            fixed.append(f"{indent}{marker} {title}")
+            fixed.append("")
+            fixed.append(f"{indent}{body}")
+
+        parts[part_index] = "\n".join(fixed)
+
+    return "".join(parts)
+
+
+_CAPTION_NUMBER_PATTERN = r"(?:[A-Z]?\d+|[A-Z])(?:[.\-]\d+)*"
+
+
+def _strip_caption_markup(line: str) -> str:
+    text = line.strip()
+    if text.startswith("**") and text.endswith("**") and len(text) >= 4:
+        text = text[2:-2].strip()
+    return text
+
+
+def _caption_match(line: str, kind: str) -> re.Match[str] | None:
+    cfg = json.loads(_OUTPUT_LAYOUT)[kind]
+    prefix = re.escape(str(cfg["prefix"]))
+    text = _strip_caption_markup(line)
+    return re.match(
+        rf"^{prefix}\s*(?P<number>{_CAPTION_NUMBER_PATTERN})(?:\s*[：:]|\s+)(?P<title>.+?)\s*$",
+        text,
+    )
+
+
+def _caption_kind_from_line(line: str) -> str:
+    if _caption_match(line, "figures"):
+        return "figures"
+    if _caption_match(line, "tables"):
+        return "tables"
+    return ""
+
+
+def _caption_title_from_line(line: str, kind: str) -> str:
+    match = _caption_match(line, kind)
+    if not match:
+        return ""
+    return match.group("title").strip().strip("*").strip()
+
+
+def _format_caption_line(kind: str, chapter: int, number: int, caption_text: str) -> str:
+    cfg = json.loads(_OUTPUT_LAYOUT)[kind]
+    caption_text = re.sub(r"\s+", " ", caption_text).strip().strip("*").strip()
+    if not caption_text:
+        caption_text = "图示" if kind == "figures" else "信息表"
+    caption = cfg["caption_format"].format(
+        prefix=cfg["prefix"],
+        chapter=chapter,
+        number=number,
+        caption=caption_text,
+    )
+    return f"**{caption}**"
+
+
+def normalize_inline_image_captions(md_text: str) -> str:
+    """将同一行中的 Markdown 图片和图 caption 拆成独立块。"""
+    parts = re.split(r"(```.*?```)", md_text, flags=re.DOTALL)
+    for part_index in range(0, len(parts), 2):
+        fixed: list[str] = []
+        for line in parts[part_index].split("\n"):
+            stripped = line.strip()
+            if not stripped or "!" not in stripped or "](" not in stripped:
+                fixed.append(line)
+                continue
+
+            image_re = r"!\[[^\]]*\]\([^)]+\)"
+            image_then_caption = re.match(rf"^\s*(?P<img>{image_re})\s*(?P<caption>.+?)\s*$", line)
+            caption_then_image = re.match(rf"^\s*(?P<caption>.+?)\s*(?P<img>{image_re})\s*$", line)
+
+            if image_then_caption and _caption_kind_from_line(image_then_caption.group("caption")) == "figures":
+                fixed.append(image_then_caption.group("img"))
+                fixed.append("")
+                fixed.append(image_then_caption.group("caption").strip())
+                continue
+
+            if caption_then_image and _caption_kind_from_line(caption_then_image.group("caption")) == "figures":
+                fixed.append(caption_then_image.group("caption").strip())
+                fixed.append("")
+                fixed.append(caption_then_image.group("img"))
+                continue
+
+            fixed.append(line)
+        parts[part_index] = "\n".join(fixed)
+    return "".join(parts)
+
+
+def _is_markdown_image_line(line: str) -> bool:
+    return bool(re.match(r"^\s*!\[[^\]]*\]\([^)]+\)\s*$", line.strip()))
+
+
+def _image_alt_text(line: str) -> str:
+    match = re.match(r"^\s*!\[(?P<alt>[^\]]*)\]\([^)]+\)\s*$", line.strip())
+    if not match:
+        return ""
+    alt = match.group("alt").strip()
+    alt = re.sub(r"^(?:图|表)\s*" + _CAPTION_NUMBER_PATTERN + r"\s*[：:]\s*", "", alt)
+    return "" if alt.lower() in {"diagram", "image", "图片"} else alt
+
+
+def _is_diagram_fence_start(line: str) -> bool:
+    return bool(re.match(r"^\s*```(?:mermaid|plantuml)\b", line.strip(), flags=re.IGNORECASE))
+
+
+def _collect_fenced_block(lines: list[str], start: int) -> tuple[list[str], int]:
+    block = [lines[start]]
+    i = start + 1
+    while i < len(lines):
+        block.append(lines[i])
+        if lines[i].strip().startswith("```"):
+            return block, i + 1
+        i += 1
+    return block, i
+
+
+def _next_nonblank_index(lines: list[str], start: int) -> int:
+    i = start
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    return i
+
+
+def _previous_nonblank_line(lines: list[str]) -> str:
+    for line in reversed(lines):
+        if line.strip():
+            return line
+    return ""
+
+
+def _is_generic_caption_title(title: str) -> bool:
+    normalized = re.sub(r"\s+", "", title.strip().strip("*"))
+    return normalized in {
+        "表格说明",
+        "相关信息表",
+        "信息表",
+        "图表说明",
+        "图片说明",
+        "图示",
+        "示意图",
+        "相关图示",
+    }
+
+
+def _caption_text_from_context(kind: str, lines: list[str], index: int) -> str:
+    if kind == "figures" and index < len(lines) and _is_markdown_image_line(lines[index]):
+        alt = _image_alt_text(lines[index])
+        if alt:
+            return alt
+    if kind == "tables":
+        return _infer_table_caption_text(lines, index)
+
+    suffix = "图" if kind == "figures" else "表"
+    for offset in range(index - 1, max(-1, index - 12), -1):
+        text = lines[offset].strip()
+        if (
+            not text
+            or _caption_kind_from_line(text)
+            or _is_markdown_image_line(text)
+            or text.startswith("```")
+            or _is_table_line(text)
+        ):
+            continue
+        if re.match(r"^#{2,6}\s+", text):
+            heading = _caption_text_from_heading(text)
+            return f"{heading}{suffix}" if heading and not heading.endswith(suffix) else heading
+        plain = re.sub(r"[*`_]+", "", text)
+        plain = re.sub(r"^(?:如下|见下图|见下表|包括|包含)[：:，,]?\s*", "", plain).strip()
+        if 4 <= len(plain) <= 40 and not plain.endswith(("。", "；", ";")):
+            return f"{plain}{suffix}" if not plain.endswith(suffix) else plain
+    return "图示" if kind == "figures" else "信息表"
+
+
+def _normalized_caption_title(kind: str, title: str, lines: list[str], index: int) -> str:
+    if title and not _is_generic_caption_title(title):
+        return title
+    return _caption_text_from_context(kind, lines, index)
+
+
+def normalize_caption_positions_and_numbering(md_text: str) -> tuple[str, list[str]]:
+    """按 output_layout.json 修正图表 caption 位置，并按一级章节重新编号。"""
+    layout = json.loads(_OUTPUT_LAYOUT)
+    figure_position = layout["figures"].get("caption_position", "below")
+    table_position = layout["tables"].get("caption_position", "above")
+    lines = normalize_inline_image_captions(md_text).split("\n")
+    out: list[str] = []
+    issues: list[str] = []
+    chapter = 0
+    figure_no = 0
+    table_no = 0
+    i = 0
+
+    def _current_chapter() -> int:
+        return max(chapter, 1)
+
+    def _renumber(kind: str, title: str, source_index: int) -> str:
+        nonlocal figure_no, table_no
+        if kind == "figures":
+            figure_no += 1
+            return _format_caption_line(kind, _current_chapter(), figure_no, title)
+        table_no += 1
+        return _format_caption_line(kind, _current_chapter(), table_no, title)
+
+    def _append_figure_caption(title: str, source_index: int) -> None:
+        if out and out[-1].strip():
+            out.append("")
+        out.append(_renumber("figures", title, source_index))
+        out.append("")
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if re.match(r"^##(?!#)\s+", line):
+            chapter += 1
+            figure_no = 0
+            table_no = 0
+            out.append(line)
+            i += 1
+            continue
+
+        if stripped.startswith("```") and not _is_diagram_fence_start(line):
+            block, next_i = _collect_fenced_block(lines, i)
+            out.extend(block)
+            i = next_i
+            continue
+
+        kind = _caption_kind_from_line(line)
+        if kind == "figures" and figure_position == "below":
+            next_i = _next_nonblank_index(lines, i + 1)
+            if next_i < len(lines) and (_is_markdown_image_line(lines[next_i]) or _is_diagram_fence_start(lines[next_i])):
+                title = _normalized_caption_title(kind, _caption_title_from_line(line, kind), lines, next_i)
+                if _is_markdown_image_line(lines[next_i]):
+                    out.append(lines[next_i])
+                    i = next_i + 1
+                else:
+                    block, i = _collect_fenced_block(lines, next_i)
+                    out.extend(block)
+                _append_figure_caption(title, next_i)
+                issues.append(f"第 {i + 1} 行附近图 caption 已移到图片下方并重新编号")
+                continue
+
+        if kind == "tables" and table_position == "above":
+            next_i = _next_nonblank_index(lines, i + 1)
+            title = _normalized_caption_title(kind, _caption_title_from_line(line, kind), lines, next_i)
+            out.append(_renumber(kind, title, next_i))
+            if next_i < len(lines) and _is_table_line(lines[next_i]):
+                out.append("")
+                i = next_i
+            else:
+                i += 1
+            continue
+
+        if _is_markdown_image_line(line) or _is_diagram_fence_start(line):
+            if _is_markdown_image_line(line):
+                figure_block = [line]
+                next_i = i + 1
+                caption_source_index = i
+            else:
+                figure_block, next_i = _collect_fenced_block(lines, i)
+                caption_source_index = i
+
+            caption_i = _next_nonblank_index(lines, next_i)
+            title = ""
+            used_following_caption = False
+            if caption_i < len(lines) and _caption_kind_from_line(lines[caption_i]) == "figures":
+                title = _caption_title_from_line(lines[caption_i], "figures")
+                used_following_caption = True
+            title = _normalized_caption_title("figures", title, lines, caption_source_index)
+
+            out.extend(figure_block)
+            _append_figure_caption(title, caption_source_index)
+            i = caption_i + 1 if used_following_caption else next_i
+            continue
+
+        if _is_table_line(line):
+            block_start = i
+            block: list[str] = []
+            while i < len(lines) and _is_table_line(lines[i]):
+                block.append(lines[i])
+                i += 1
+
+            previous_caption = _caption_kind_from_line(_previous_nonblank_line(out)) == "tables"
+            caption_i = _next_nonblank_index(lines, i)
+            used_following_caption = False
+            title = ""
+            if caption_i < len(lines) and _caption_kind_from_line(lines[caption_i]) == "tables":
+                title = _caption_title_from_line(lines[caption_i], "tables")
+                used_following_caption = True
+
+            if not previous_caption:
+                title = _normalized_caption_title("tables", title, lines, block_start)
+                out.append(_renumber("tables", title, block_start))
+                out.append("")
+                if used_following_caption:
+                    issues.append(f"第 {caption_i + 1} 行附近表 caption 已移到表格上方并重新编号")
+            out.extend(block)
+            if used_following_caption:
+                i = caption_i + 1
+            continue
+
+        if kind:
+            title = _normalized_caption_title(kind, _caption_title_from_line(line, kind), lines, i)
+            if kind == "figures":
+                _append_figure_caption(title, i)
+            else:
+                out.append(_renumber(kind, title, i))
+            i += 1
+            continue
+
+        out.append(line)
+        i += 1
+
+    return "\n".join(out), issues
+
+
 _DETAIL_LABELS = {
     "描述",
     "功能描述",
@@ -1538,17 +1945,28 @@ def _looks_like_detail_line(line: str) -> bool:
 
 
 def _looks_like_promotable_title(lines: list[str], index: int) -> bool:
-    line = lines[index]
-    if _looks_like_detail_line(line):
+    parsed = _parse_promotable_title_line(lines[index])
+    if parsed is None:
         return False
-    if not re.match(r"^\s*(?:#{5,6}\s*)?\(\d+\)\s+\S+", line):
+    title = parsed[1]
+    plain = re.sub(r"[*_`]+", "", title).strip()
+    if plain in _DETAIL_LABELS or len(plain) > 34 or re.search(r"[。；;!?！？]$", plain):
         return False
-    for next_line in lines[index + 1 : index + 6]:
+    for next_line in lines[index + 1 : index + 8]:
         if not next_line.strip():
             continue
-        if re.match(r"^#{1,6}\s+", next_line):
+        stripped = next_line.strip()
+        if (
+            re.match(r"^#{1,6}\s+", stripped)
+            or _caption_kind_from_line(stripped)
+            or _is_markdown_image_line(stripped)
+            or _is_table_line(stripped)
+            or stripped.startswith("```")
+        ):
             return False
-        return _looks_like_detail_line(next_line)
+        if _looks_like_detail_line(next_line):
+            return True
+        return not bool(_parse_promotable_title_line(next_line))
     return False
 
 
@@ -1558,12 +1976,36 @@ def _strip_heading_number(title: str) -> str:
     return title
 
 
+def _parse_promotable_title_line(line: str) -> tuple[int, str] | None:
+    match = re.match(
+        r"^\s*(?:#{5,6}\s*)?(?:(?:[（(](?P<paren>\d+)[）)])|(?P<letter>[a-zA-Z])[.、．)]|(?P<num>\d+)[.、．)])\s*(?P<title>\S.+?)\s*$",
+        line,
+    )
+    if not match:
+        return None
+    if match.group("paren"):
+        ordinal = int(match.group("paren"))
+    elif match.group("num"):
+        ordinal = int(match.group("num"))
+    else:
+        ordinal = ord(match.group("letter").lower()) - ord("a") + 1
+    title = _strip_heading_number(match.group("title"))
+    return ordinal, title
+
+
 def normalize_heading_numbering(md_text: str) -> str:
     """Promote heading-like numbered list items to four-part Markdown headings."""
     lines = md_text.splitlines()
     out: list[str] = []
     parent_numbers: list[str] = []
     in_promoted_block = False
+    promoted_counts: dict[str, int] = {}
+
+    def _next_promoted_ordinal(parent: str, ordinal: int) -> int:
+        previous = promoted_counts.get(parent, 0)
+        next_ordinal = ordinal if ordinal > previous else previous + 1
+        promoted_counts[parent] = next_ordinal
+        return next_ordinal
 
     for index, line in enumerate(lines):
         heading_match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
@@ -1575,12 +2017,12 @@ def normalize_heading_numbering(md_text: str) -> str:
             if number:
                 parent_numbers = parent_numbers[: max(level - 2, 0)] + [number]
 
-            title_match = re.match(r"^\((\d+)\)\s+(.+)$", title)
+            title_match = _parse_promotable_title_line(title)
             parent = _current_four_part_parent(parent_numbers)
             if level >= 5 and title_match and parent:
-                ordinal = title_match.group(1)
-                title_text = _strip_heading_number(title_match.group(2))
-                out.append(f"##### {parent}.{ordinal} {title_text}")
+                ordinal, title_text = title_match
+                promoted_ordinal = _next_promoted_ordinal(parent, ordinal)
+                out.append(f"##### {parent}.{promoted_ordinal} {title_text}")
                 in_promoted_block = True
                 continue
 
@@ -1590,12 +2032,12 @@ def normalize_heading_numbering(md_text: str) -> str:
             continue
 
         if _looks_like_promotable_title(lines, index):
-            match = re.match(r"^\s*(?:#{5,6}\s*)?\((\d+)\)\s+(.+?)\s*$", line)
+            match = _parse_promotable_title_line(line)
             parent = _current_four_part_parent(parent_numbers)
             if match and parent:
-                ordinal = match.group(1)
-                title_text = _strip_heading_number(match.group(2))
-                out.append(f"##### {parent}.{ordinal} {title_text}")
+                ordinal, title_text = match
+                promoted_ordinal = _next_promoted_ordinal(parent, ordinal)
+                out.append(f"##### {parent}.{promoted_ordinal} {title_text}")
                 in_promoted_block = True
                 continue
 
@@ -1840,6 +2282,15 @@ def _document_meta_fields() -> list[dict[str, str]]:
     return [field for field in fields if isinstance(field, dict) and field.get("key")]
 
 
+def _document_meta_keys(include_legacy: bool = False) -> list[str]:
+    keys = [field["key"] for field in _document_meta_fields()]
+    if include_legacy:
+        for key in _LEGACY_DOCUMENT_META_KEYS:
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
 def _document_title_for_type(doc_type: str) -> str:
     for doc in _OUTPUT_SCHEMA.get("documents", []):
         if doc.get("doc_type") == doc_type:
@@ -1849,16 +2300,12 @@ def _document_title_for_type(doc_type: str) -> str:
 
 def _default_meta_value(key: str, doc_type: str) -> str:
     doc_meta = json.loads(_OUTPUT_LAYOUT).get("document_meta", {})
-    if key == "文档编号":
-        document_numbers = doc_meta.get("document_numbers", {})
-        if isinstance(document_numbers, dict) and doc_type in document_numbers:
-            return str(document_numbers[doc_type])
     defaults = doc_meta.get("defaults", {})
     if isinstance(defaults, dict) and key in defaults:
         return str(defaults[key])
     for field in _document_meta_fields():
         if field.get("key") == key:
-            return str(field.get("example", ""))
+            return str(field.get("default", ""))
     return ""
 
 
@@ -1868,6 +2315,7 @@ def _metadata_line_value(line: str, key: str) -> Optional[str]:
     escaped_key = _re.escape(key)
     patterns = (
         rf"^\s*\*\*\s*{escaped_key}\s*\*\*\s*[:\uff1a]\s*(?P<value>.*?)\s*$",
+        rf"^\s*\*\*\s*{escaped_key}\s*[:\uff1a]\s*(?P<value>.*?)\s*\*\*\s*[:\uff1a]?\s*$",
         rf"^\s*\*\*\s*{escaped_key}\s*[:\uff1a]\s*(?P<value>.*?)\s*\*\*\s*$",
         rf"^\s*{escaped_key}\s*[:\uff1a]\s*(?P<value>.*?)\s*$",
     )
@@ -1879,12 +2327,13 @@ def _metadata_line_value(line: str, key: str) -> Optional[str]:
 
 
 def _is_document_metadata_line(line: str) -> bool:
-    return any(_metadata_line_value(line, field["key"]) is not None for field in _document_meta_fields())
+    return any(_metadata_line_value(line, key) is not None for key in _document_meta_keys(include_legacy=True))
 
 
-def _extract_metadata_values(md_text: str, doc_type: str = "") -> dict[str, str]:
+def _extract_metadata_values(md_text: str, doc_type: str = "", extra_text: str = "") -> dict[str, str]:
     values: dict[str, str] = {}
-    for line in md_text.splitlines():
+    scan_text = md_text if not extra_text else f"{md_text}\n{extra_text}"
+    for line in scan_text.splitlines():
         for field in _document_meta_fields():
             key = field["key"]
             value = _metadata_line_value(line, key)
@@ -1905,12 +2354,12 @@ def _remove_document_metadata_lines(md_text: str) -> str:
     return "\n".join(line for line in md_text.splitlines() if not _is_document_metadata_line(line))
 
 
-def normalize_document_header(md_text: str, doc_type: str = "") -> str:
-    """Ensure the document has exactly one H1 and one metadata block."""
+def normalize_document_header(md_text: str, doc_type: str = "", metadata_source: str = "") -> str:
+    """Ensure the document has exactly one H1 and one cover-information block."""
     import re as _re
 
     title = _document_title_for_type(doc_type)
-    metadata = _extract_metadata_values(md_text, doc_type)
+    metadata = _extract_metadata_values(md_text, doc_type, metadata_source)
     lines = _remove_document_metadata_lines(md_text).splitlines()
     body_lines = []
     first_title = ""
@@ -1929,7 +2378,7 @@ def normalize_document_header(md_text: str, doc_type: str = "") -> str:
 
 
 def _extract_doc_info(md_text: str) -> dict:
-    """从 Markdown 中提取元数据。字段名与 output_layout.json document_meta.fields 对齐。"""
+    """从 Markdown 中提取封面信息。字段名与 output_layout.json document_meta.fields 对齐。"""
     lo = json.loads(_OUTPUT_LAYOUT)
     prefix = lo.get("document_title", {}).get("prefix", "")
     meta_fields = lo.get("document_meta", {}).get("fields", [])
@@ -1953,7 +2402,7 @@ def _extract_doc_info(md_text: str) -> dict:
 
 
 def _format_title_html(md_body: str, md_text: str, doc_info: dict | None = None) -> str:
-    """将 H1 替换为居中标题块，元数据垂直排列，整体垂直水平居中并独立成页。
+    """将 H1 替换为居中标题块，封面信息垂直排列，整体垂直水平居中并独立成页。
     若传入 doc_info 则直接使用，否则从 md_text 提取。"""
     lo = json.loads(_OUTPUT_LAYOUT)
     meta_fields = lo.get("document_meta", {}).get("fields", [])
@@ -1992,12 +2441,21 @@ def _center_captions(html_body: str) -> str:
     import re as _re
 
     lo = json.loads(_OUTPUT_LAYOUT)
-    caption_font_sizes = {
-        lo["figures"]["prefix"]: lo["figures"]["font_size"],
-        lo["tables"]["prefix"]: lo["tables"]["font_size"],
+    pdf_cfg = lo.get("pdf_rendering", {})
+    caption_styles = {
+        lo["figures"]["prefix"]: {
+            "font_size": lo["figures"]["font_size"],
+            "margin_top": pdf_cfg.get("caption_margin_top", "0"),
+            "margin_bottom": pdf_cfg.get("caption_margin_bottom", "0"),
+        },
+        lo["tables"]["prefix"]: {
+            "font_size": lo["tables"]["font_size"],
+            "margin_top": "0",
+            "margin_bottom": pdf_cfg.get("caption_margin_bottom", "0"),
+        },
     }
 
-    prefix_pattern = "|".join(_re.escape(prefix) for prefix in caption_font_sizes)
+    prefix_pattern = "|".join(_re.escape(prefix) for prefix in caption_styles)
     caption_pattern = _re.compile(
         rf"^({prefix_pattern})\s*(?P<num>(?:[A-Z]?\d+|[A-Z])(?:[-.]\d+)*)(?P<sep>[：:]|\s+)(?P<title>.+)$"
     )
@@ -2035,17 +2493,24 @@ def _center_captions(html_body: str) -> str:
         if not _is_caption(plain_text):
             return match.group(0)
         prefix = plain_text[:1]
-        font_size = caption_font_sizes.get(prefix, lo["font"]["body_size"])
+        style_cfg = caption_styles.get(prefix, {})
+        font_size = style_cfg.get("font_size", lo["font"]["body_size"])
+        margin_top = style_cfg.get("margin_top", "0")
+        margin_bottom = style_cfg.get("margin_bottom", "0")
+        caption_style = (
+            f"text-align:center;text-indent:0;font-size:{font_size};"
+            f"margin-top:{margin_top};margin-bottom:{margin_bottom}"
+        )
 
         if "style=" in attrs:
             attrs = _re.sub(
                 r'style=(["\'])(.*?)\1',
-                rf"style=\1\2;text-align:center;text-indent:0;font-size:{font_size}\1",
+                rf"style=\1\2;{caption_style}\1",
                 attrs,
                 count=1,
             )
             return f"<p{attrs}>{inner}</p>"
-        return f'<p{attrs} style="text-align:center;text-indent:0;font-size:{font_size}">{inner}</p>'
+        return f'<p{attrs} style="{caption_style}">{inner}</p>'
 
     return _re.sub(r"<p([^>]*)>(.*?)</p>", _wrap, html_body, flags=_re.DOTALL)
 
@@ -2082,7 +2547,7 @@ def convert_to_pdf(md_path: str) -> str:
     处理流程:
         1. 预处理 — Mermaid 代码块渲染为 PNG，清理 LLM 客套话
         2. MD → HTML — 使用 Python-Markdown 库
-        3. 标题格式化 — 居中 + 项目名前缀 + 元数据
+        3. 标题格式化 — 居中 + 项目名前缀 + 封面信息
         4. HTML + CSS → PDF — 使用 Playwright (Chromium)
 
     Returns:
@@ -2101,14 +2566,17 @@ def convert_to_pdf(md_path: str) -> str:
     # ── 步骤1: 清理 + Mermaid + 列表修正 ──
     logger.info("  [PDF] 步骤1: 清理文本 + 渲染图表 + 修正列表...")
     md_text = _clean_boilerplate(md_text)
-    # 先从原始 MD 提取元数据（删除前提取，否则 _extract_doc_info 读到空值）
+    # 先从原始 MD 提取封面信息（删除前提取，否则 _extract_doc_info 读到空值）
     _doc_info = _extract_doc_info(md_text)
-    # 在 MD 层面移除所有文档元数据行，标题页由 _format_title_html 统一生成。
+    # 在 MD 层面移除所有文档封面信息行，标题页由 _format_title_html 统一生成。
     md_text = _remove_document_metadata_lines(md_text)
     md_text = normalize_heading_numbering(md_text)
     md_text = _fix_unordered_lists_in_md(md_text)
-    md_text = _render_diagram_blocks_for_html(md_text)
+    md_text = normalize_inline_section_titles(md_text)
+    md_text, _caption_issues = normalize_caption_positions_and_numbering(md_text)
     md_text, _table_issues = _validate_table_captions(md_text)
+    md_text, _caption_issues_after_table_repair = normalize_caption_positions_and_numbering(md_text)
+    md_text = _render_diagram_blocks_for_html(md_text)
 
     # ── 步骤2: MD → HTML（先转义 UML 原型符号 <<...>>，防止被当作 HTML 标签）──
     logger.info("  [PDF] 步骤2: Markdown → HTML")

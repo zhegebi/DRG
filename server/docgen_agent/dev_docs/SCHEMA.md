@@ -71,21 +71,30 @@ UC1 ..> UC2 : <<include>>
 6. 用例图 → ```plantuml + render_plantuml；其他 → ```mermaid + render_mermaid
 7. 复杂图表适当简化
 
+## content_format_rules
+
+文档内容格式规则集中在 `content_format_rules`:
+
+| 规则 | 说明 |
+|------|------|
+| 标题独占行 | Markdown 标题、`a. b. c. d.` 小项标题、`（1）（2）（3）` 小项标题都必须独占一行 |
+| 四段式标题 | 5 级及更深标题固定使用 `decimal_dot_4`，如 `##### 3.1.1.2 字段校验` |
+| 小项标识 | `a. b. c. d.` 与 `（1）（2）（3）` 只能作为正文小项标识，不作为标题层级编号 |
+| caption 内容 | 图表必须有具体 caption 名称，位置与编号由 `output_layout.json` 管理 |
+| 正文承载 | 正文说明另起段，不塞入标题、小项标题或 caption 行 |
+
 ## global_tips
 
-LLM 写作全局规则 (9 条)，摘要:
+LLM 写作全局规则摘要:
 
 | # | 规则 |
 |---|------|
 | 1 | required: true 必须生成 |
-| 2 | required: false 仅资料不足时可省略 |
+| 2 | required: false 仅资料不足时可省略，并在日志或单独报告中说明 |
 | 3 | 资料足够时尽量生成 |
 | 4 | 用例图 → PlantUML，其他 → Mermaid |
-| 5 | 图表/表格必须紧跟粗体标题，按章编号 |
-| 6 | 图片路径直接使用工具返回值 |
-| 7 | 元数据由 LLM 生成 |
-| 8 | Mermaid → ```mermaid，PlantUML → ```plantuml |
-| 9 | 所有视觉规范见 output_layout.json |
+| 5 | Markdown 内容格式遵守 `content_format_rules` |
+| 6 | 所有视觉规范见 `output_layout.json` |
 
 ## documents[]
 
