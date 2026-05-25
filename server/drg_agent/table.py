@@ -28,7 +28,7 @@ class DrgTask(SQLModel, table=True):
     result: Optional[dict] = Field(
         default=None, sa_column=Column(JSON)
     )  # the format is DrgResult or DrgResultWithTestCase in models.py
-    status: str
+    status: TaskStatus
     should_generate_test: bool
     err_msg: Optional[str] = None
     created_at: datetime

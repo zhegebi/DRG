@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 from datetime import datetime
 from enum import Enum
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import update
 
 from server.db.utils import get_async_session
-from server.knowledge_base.table import Document
+from server.knowledge_base.table import Category, Document
 
 from ..config import API_KEY
 from .models import (
@@ -895,6 +896,32 @@ class Task(BaseModel):
 """
         return document
 
+    async def _generate_summary(self, document: str) -> str:
+        try:
+            system_prompt = """
+            请为用户输入的文档提供一个摘要, 10个字左右, 格式为json对象:
+            {
+            "summary": "摘要内容"
+            }
+            """
+            response = await client.chat.completions.create(
+                model="deepseek-v4-pro",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": document},
+                ],
+                temperature=1.0,
+                response_format={"type": "json_object"},
+            )
+            content = response.choices[0].message.content
+            if content is None:
+                return self.name
+            summary = json.loads(content)["summary"]
+            return summary
+        except Exception as e:
+            logger.warning(f"cannot generate summary, error: {e}")
+            return self.name
+
     """
     public methods
     """
@@ -964,10 +991,8 @@ class Task(BaseModel):
                     # add document to knowledge base
                     try:
                         document = self._generate_document()
-                        document_obj = Document(
-                            title=self.name,
-                            content=document,
-                        )
+                        sum = await self._generate_summary(document)
+                        document_obj = Document(title=sum, content=document, category=Category.DRG_GROUP)
                         db_client.add(document_obj)
                         await db_client.flush()
                         await db_client.exec(
@@ -1095,10 +1120,8 @@ class Task(BaseModel):
                     # add document to knowledge base
                     try:
                         document = self._generate_document()
-                        document_obj = Document(
-                            title=self.name,
-                            content=document,
-                        )
+                        sum = await self._generate_summary(document)
+                        document_obj = Document(title=sum, content=document, category=Category.TEST_CASE)
                         db_client.add(document_obj)
                         await db_client.flush()
                         await db_client.exec(

@@ -76,7 +76,7 @@ async def create_task(
             name=task_obj.name,
             user_input=task_obj.user_input,
             user_id=task_obj.user_id,
-            status=task_obj.status.value,
+            status=task_obj.status,
             should_generate_test=task_obj.should_generate_test,
             created_at=task_obj.created_at,
         )
