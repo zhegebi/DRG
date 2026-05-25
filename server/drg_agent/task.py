@@ -962,20 +962,6 @@ class Task(BaseModel):
                         await db_client.rollback()
                         logger.exception(f"cannot update task status and result, error: {e}")
                         raise e
-                    # add document to knowledge base
-                    try:
-                        document = self._generate_document()
-                        sum = await generate_summary(document, self.name)
-                        document_obj = Document(title=sum, content=document, category=Category.DRG_GROUP)
-                        db_client.add(document_obj)
-                        await db_client.flush()
-                        await db_client.exec(
-                            update(DrgTask).where(DrgTask.task_id == self.id).values(document_id=document_obj.id)  # type: ignore
-                        )
-                        await db_client.commit()
-                    except Exception as e:
-                        await db_client.rollback()
-                        logger.exception(f"cannot add document, error: {e}")
                 except Exception as e:
                     self.err_msg = str(e)
                     self.status = TaskStatus.FAILED
@@ -992,6 +978,20 @@ class Task(BaseModel):
                         raise e
                 finally:
                     Task.delete_task_log(self.id)
+                    # add document to knowledge base
+                    try:
+                        document = self._generate_document()
+                        sum = await generate_summary(document, self.name)
+                        document_obj = Document(title=sum, content=document, category=Category.DRG_GROUP)
+                        db_client.add(document_obj)
+                        await db_client.flush()
+                        await db_client.exec(
+                            update(DrgTask).where(DrgTask.task_id == self.id).values(document_id=document_obj.id)  # type: ignore
+                        )
+                        await db_client.commit()
+                    except Exception as e:
+                        await db_client.rollback()
+                        logger.exception(f"cannot add document, error: {e}")
 
     async def run_task_with_test(self, user_input: str, uv_test: bool = False):
         """

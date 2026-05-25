@@ -78,22 +78,32 @@
         </div>
 
         <div class="task-composer">
-          <div v-if="fileList.length > 0" class="file-cards">
+          <div v-if="fileList.length > 0 || isUploading" class="file-cards">
             <div v-for="(file, index) in fileList" :key="index" class="file-card">
               <span class="file-card-name">{{ file.name }}</span>
               <button class="file-card-remove" @click="removeFile(index)">
                 <SvgIcon type="mdi" :path="mdiCloseCircle" class="file-card-remove-icon" />
               </button>
             </div>
+            <div v-if="isUploading" class="file-card file-card-uploading">
+              <span class="file-card-spinner"></span>
+              <span class="file-card-name">{{ uploadingFileName }}</span>
+            </div>
           </div>
 
-          <label v-if="agentType === 'notest'" class="file-upload-btn" title="上传电子病历文件">
+          <label
+            v-if="agentType === 'notest'"
+            class="file-upload-btn"
+            :class="{ 'file-upload-disabled': isUploading }"
+            :title="isUploading ? '文件上传中...' : '上传电子病历文件'"
+          >
             <SvgIcon type="mdi" :path="mdiFileUpload" class="button-icon" />
             <span>上传病历文件</span>
             <input
               type="file"
               accept=".txt,.md,.pdf"
               class="file-input-hidden"
+              :disabled="isUploading"
               @change="handleFileUpload"
             />
           </label>
@@ -106,7 +116,15 @@
               :placeholder="taskInputPlaceholder"
             ></textarea>
 
-            <button class="submit-button" type="button" aria-label="提交任务" @click="submitNewTask">
+            <button
+              class="submit-button"
+              :class="{ disabled: submitDisabled }"
+              type="button"
+              :disabled="submitDisabled"
+              :title="submitTooltip || '提交任务'"
+              aria-label="提交任务"
+              @click="submitNewTask"
+            >
               <SvgIcon type="mdi" :path="mdiSend" class="button-icon" />
             </button>
           </div>
@@ -272,6 +290,8 @@ const resultContent = ref('')
 const isLoadingResult = ref(false)
 const isEditing = ref(false)
 const isSubmitting = ref(false)
+const isUploading = ref(false)
+const uploadingFileName = ref('')
 let resultVersion = 0
 
 let progressTimer: ReturnType<typeof setInterval> | null = null
@@ -296,6 +316,16 @@ const selectedTask = computed(() => {
 
 const taskInputPlaceholder = computed(() => {
   return agentType.value === 'test' ? '请输入您想要的测试用例类型' : '请输入电子病历'
+})
+
+const submitDisabled = computed(() => {
+  return isUploading.value || isSubmitting.value
+})
+
+const submitTooltip = computed(() => {
+  if (isUploading.value) return '文件正在上传中，请稍候'
+  if (isSubmitting.value) return '任务正在提交中...'
+  return ''
 })
 
 const renderedResult = computed(() => {
@@ -582,23 +612,29 @@ const handleFileUpload = async (e: Event) => {
   const file = input.files?.[0]
   if (!file) return
 
-  if (file.name.endsWith('.pdf')) {
-    const arrayBuffer = await file.arrayBuffer()
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-    let text = ''
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      const pageText = content.items.map((item: any) => item.str).join(' ')
-      text += pageText + '\n'
+  isUploading.value = true
+  uploadingFileName.value = file.name
+  try {
+    if (file.name.endsWith('.pdf')) {
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let text = ''
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        const pageText = content.items.map((item: any) => item.str).join(' ')
+        text += pageText + '\n'
+      }
+      fileList.value.push({ name: file.name, content: text.trim() })
+    } else {
+      const text = await file.text()
+      fileList.value.push({ name: file.name, content: text })
     }
-    fileList.value.push({ name: file.name, content: text.trim() })
-  } else {
-    const text = await file.text()
-    fileList.value.push({ name: file.name, content: text })
+  } finally {
+    isUploading.value = false
+    uploadingFileName.value = ''
+    input.value = ''
   }
-
-  input.value = ''
 }
 
 const submitNewTask = async () => {
@@ -920,6 +956,16 @@ onUnmounted(() => {
     background: rgba($primary, 0.06);
     border-color: rgba($primary, 0.55);
   }
+
+  &.file-upload-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+
+    &:hover {
+      background: $bg-white;
+      border-color: rgba($primary, 0.35);
+    }
+  }
 }
 
 .file-input-hidden {
@@ -979,6 +1025,26 @@ onUnmounted(() => {
   }
 }
 
+.file-card-uploading {
+  opacity: 0.7;
+}
+
+.file-card-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid rgba($primary, 0.2);
+  border-top-color: $primary;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .file-card-remove-icon {
   width: 18px;
   height: 18px;
@@ -1013,6 +1079,11 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
+  &.disabled {
+    background: rgba($primary, 0.4);
+    cursor: not-allowed;
+  }
 }
 
 .task-detail-view {
