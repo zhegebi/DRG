@@ -43,6 +43,7 @@
             class="prompt-input"
             rows="5"
             placeholder="补充生成重点，例如：突出接口定义、模块职责、测试边界和部署视图"
+            @keydown="handlePromptKeydown"
           ></textarea>
 
           <div class="composer-actions">
@@ -97,6 +98,7 @@
             </div>
 
             <button
+              ref="docSubmitButtonRef"
               class="submit-button"
               type="button"
               :disabled="isSubmitting || selectedDocTypes.length === 0"
@@ -104,7 +106,7 @@
             >
               <SvgIcon
                 type="mdi"
-                :path="isSubmitting ? mdiProgressClock : mdiSend"
+                :path="isSubmitting ? mdiLoading : mdiSend"
                 :class="['button-icon', { 'loading-icon': isSubmitting }]"
               />
             </button>
@@ -218,8 +220,14 @@
                         <strong
                           class="chapter-process-status"
                           :class="`chapter-process-status-${group.status}`"
+                          :title="chapterStatusLabel(group.status)"
+                          :aria-label="chapterStatusLabel(group.status)"
                         >
-                          {{ chapterStatusLabel(group.status) }}
+                          <SvgIcon
+                            type="mdi"
+                            :path="chapterStatusIcon(group.status)"
+                            class="chapter-process-status-icon"
+                          />
                         </strong>
                         <span class="chapter-event-count">{{ group.events.length }} 条</span>
                         <SvgIcon
@@ -285,7 +293,7 @@
                             <SvgIcon
                               v-if="isStreamingEventGroup(task.run, eventGroup)"
                               type="mdi"
-                              :path="mdiProgressClock"
+                              :path="mdiLoading"
                               class="process-event-loading loading-icon"
                             />
                             <time>{{ formatTime(lastProcessEvent(eventGroup).time) }}</time>
@@ -295,13 +303,14 @@
                             <span
                               class="process-event-current-status"
                               :class="`process-event-current-${eventGroup.state}`"
+                              :title="processEventGroupStatusText(eventGroup)"
+                              :aria-label="processEventGroupStatusText(eventGroup)"
                             >
                               <SvgIcon
                                 type="mdi"
                                 :path="processExecutionStatusIcon(eventGroup.state)"
                                 :class="['process-status-icon', { 'loading-icon': eventGroup.state === 'running' }]"
                               />
-                              <span>{{ processEventGroupStatusText(eventGroup) }}</span>
                             </span>
                             <SvgIcon
                               type="mdi"
@@ -311,7 +320,8 @@
                           </div>
                         </button>
                         <div
-                          v-if="isProcessEventExpanded(task.run.run_id, group, eventGroup)"
+                          v-if="isProcessEventExpanded(task.run.run_id, group, eventGroup)
+                            && visibleProcessEntries(task.run.run_id, group, eventGroup).length"
                           class="process-event-entry-list"
                           @scroll="onProcessEntryListScroll($event, task.run.run_id, group, eventGroup)"
                         >
@@ -328,6 +338,8 @@
                                   <span
                                     class="process-event-entry-status"
                                     :class="`process-event-current-${processEventEntryState(evt, eventGroup)}`"
+                                    :title="processEventEntryStatusText(evt, eventGroup)"
+                                    :aria-label="processEventEntryStatusText(evt, eventGroup)"
                                   >
                                     <SvgIcon
                                       type="mdi"
@@ -337,7 +349,6 @@
                                         { 'loading-icon': processEventEntryState(evt, eventGroup) === 'running' },
                                       ]"
                                     />
-                                    <span>{{ processEventEntryStatusText(evt, eventGroup) }}</span>
                                   </span>
                                 </span>
                                 <time>{{ formatTime(evt.time) }}</time>
@@ -358,7 +369,7 @@
                             <SvgIcon
                               v-if="isProcessEntryGroupLoading(task.run.run_id, group, eventGroup)"
                               type="mdi"
-                              :path="mdiProgressClock"
+                              :path="mdiLoading"
                               class="button-icon loading-icon"
                             />
                             <span>
@@ -378,7 +389,7 @@
                         <SvgIcon
                           v-if="isProcessGroupLoading(task.run.run_id, group)"
                           type="mdi"
-                          :path="mdiProgressClock"
+                          :path="mdiLoading"
                           class="button-icon loading-icon"
                         />
                         <span>
@@ -396,7 +407,7 @@
                       <SvgIcon
                         v-if="shouldShowGroupLoading(task.run, group)"
                         type="mdi"
-                        :path="mdiProgressClock"
+                        :path="mdiLoading"
                         class="button-icon loading-icon"
                       />
                       <span>{{ group.emptyText }}</span>
@@ -413,7 +424,7 @@
           <div class="bottom-operation-card generation-control-card">
             <div class="generation-control-main">
               <div class="generation-control-text">
-                <SvgIcon type="mdi" :path="mdiProgressClock" class="button-icon loading-icon" />
+                <SvgIcon type="mdi" :path="mdiLoading" class="button-icon loading-icon" />
                 <span>{{ isTerminating ? '正在终止当前任务' : '任务正在生成' }}</span>
               </div>
               <button
@@ -424,7 +435,7 @@
               >
                 <SvgIcon
                   type="mdi"
-                  :path="isTerminating ? mdiProgressClock : mdiStopCircleOutline"
+                  :path="isTerminating ? mdiLoading : mdiStopCircleOutline"
                   :class="['button-icon', { 'loading-icon': isTerminating }]"
                 />
                 {{ isTerminating ? '终止中' : '终止' }}
@@ -471,7 +482,7 @@
         <section v-if="previewFileKind" class="drawer-preview-panel drawer-preview-full">
           <div v-if="previewError" class="drawer-preview-error">{{ previewError }}</div>
           <div v-else-if="isPreviewLoading" class="drawer-preview-empty">
-            <SvgIcon type="mdi" :path="mdiProgressClock" class="button-icon loading-icon" />
+            <SvgIcon type="mdi" :path="mdiLoading" class="button-icon loading-icon" />
             <span>正在加载预览</span>
           </div>
           <iframe
@@ -568,8 +579,8 @@ import {
   mdiFilePdfBox,
   mdiFilePlusOutline,
   mdiFormatListBulletedType,
+  mdiLoading,
   mdiPlus,
-  mdiProgressClock,
   mdiSend,
   mdiStopCircleOutline,
 } from '@mdi/js'
@@ -645,6 +656,7 @@ const selectedRunId = ref<string | null>(null)
 const selectedRun = ref<RunTrace | null>(null)
 const runHistory = ref<RunTrace[]>([])
 const sourceInputRef = ref<HTMLInputElement | null>(null)
+const docSubmitButtonRef = ref<HTMLButtonElement | null>(null)
 const previewDrawerOpen = ref(false)
 const docTypeMenuOpen = ref(false)
 const previewFileKind = ref<'markdown' | 'pdf' | ''>('')
@@ -860,6 +872,7 @@ const openNewDoc = () => {
 }
 
 const submitGeneration = async () => {
+  if (isSubmitting.value) return
   isSubmitting.value = true
   errorMessage.value = ''
   try {
@@ -902,6 +915,28 @@ const submitGeneration = async () => {
   } finally {
     isSubmitting.value = false
   }
+}
+
+const insertTextareaLineBreak = (event: KeyboardEvent) => {
+  const target = event.target
+  if (!(target instanceof HTMLTextAreaElement)) return
+  const start = target.selectionStart
+  const end = target.selectionEnd
+  target.value = `${target.value.slice(0, start)}\n${target.value.slice(end)}`
+  target.selectionStart = start + 1
+  target.selectionEnd = start + 1
+  target.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+const handlePromptKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Enter' || event.isComposing) return
+  event.preventDefault()
+  if (event.ctrlKey || event.shiftKey) {
+    insertTextareaLineBreak(event)
+    return
+  }
+  if (isSubmitting.value || selectedDocTypes.value.length === 0) return
+  docSubmitButtonRef.value?.click()
 }
 
 const selectRun = async (runId: string) => {
@@ -1210,6 +1245,12 @@ const chapterStatusLabel = (status: ChapterProgressStatus) => {
   return chapterStatusLabelMap[status] || status
 }
 
+const chapterStatusIcon = (status: ChapterProgressStatus) => {
+  if (status === 'completed') return mdiCheckCircleOutline
+  if (status === 'running') return mdiLoading
+  return mdiClockOutline
+}
+
 const chapterGroupExpansionKey = (runId: string, group: ChapterProcessGroup) => {
   return `${runId}::chapter::${group.key}`
 }
@@ -1333,6 +1374,13 @@ const processEntryChapterKey = (event: AgentTraceEvent) => {
   return event.title || eventSectionTitle(event) || ''
 }
 
+const shouldShowProcessEventEntry = (event: AgentTraceEvent) => {
+  const isPhaseStatus = event.type === 'phase_started'
+    || event.type === 'phase_completed'
+    || event.type === 'llm_request'
+  return !isPhaseStatus || eventHasBody(event)
+}
+
 const processEventDisplayEntries = (eventGroup: ProcessEventDisplayGroup) => {
   const completedChapters = new Set(
     eventGroup.events
@@ -1340,11 +1388,14 @@ const processEventDisplayEntries = (eventGroup: ProcessEventDisplayGroup) => {
       .map(processEntryChapterKey)
       .filter(Boolean),
   )
-  if (!completedChapters.size) return eventGroup.events
-  return eventGroup.events.filter((event) => {
-    return event.type !== 'section_saved_in_memory'
+  let entries = eventGroup.events
+  if (completedChapters.size) {
+    entries = eventGroup.events.filter((event) => {
+      return event.type !== 'section_saved_in_memory'
       || !completedChapters.has(processEntryChapterKey(event))
-  })
+    })
+  }
+  return entries.filter(shouldShowProcessEventEntry)
 }
 
 const visibleProcessEntryCount = (
@@ -1489,7 +1540,7 @@ const isStreamingEventForRun = (run: RunTrace, event: AgentTraceEvent) => {
 const runStatusIcon = (status: string) => {
   if (status === 'completed') return mdiCheckCircleOutline
   if (status === 'failed' || status === 'terminated') return mdiAlertCircleOutline
-  if (status === 'running' || status.endsWith('_requested')) return mdiProgressClock
+  if (status === 'running' || status.endsWith('_requested')) return mdiLoading
   return mdiClockOutline
 }
 
@@ -1552,7 +1603,7 @@ const processExecutionStatusLabel = (state: ProcessExecutionState) => {
 
 const processExecutionStatusIcon = (state: ProcessExecutionState) => {
   if (state === 'started') return mdiClockOutline
-  if (state === 'running') return mdiProgressClock
+  if (state === 'running') return mdiLoading
   if (state === 'completed') return mdiCheckCircleOutline
   return mdiAlertCircleOutline
 }
@@ -2678,6 +2729,24 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.chapter-process-status {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chapter-process-status-icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.chapter-process-status-running .chapter-process-status-icon {
+  animation: icon-spin 0.95s linear infinite;
+}
+
 .chapter-process-status-running {
   color: #007fd4;
 }
@@ -3125,12 +3194,14 @@ onUnmounted(() => {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
 }
 
 .process-status-icon {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   fill: currentColor;
 }
 

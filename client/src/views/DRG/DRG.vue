@@ -114,9 +114,11 @@
               class="task-input"
               rows="1"
               :placeholder="taskInputPlaceholder"
+              @keydown="handleTaskInputKeydown"
             ></textarea>
 
             <button
+              ref="taskSubmitButtonRef"
               class="submit-button"
               :class="{ disabled: submitDisabled }"
               type="button"
@@ -283,6 +285,7 @@ interface FileItem {
 }
 
 const taskInput = ref('')
+const taskSubmitButtonRef = ref<HTMLButtonElement | null>(null)
 const fileList = ref<FileItem[]>([])
 const stepStates = ref<Record<string, { lines: string[] }>>({})
 const viewMode = ref<'progress' | 'result'>('progress')
@@ -659,6 +662,28 @@ const submitNewTask = async () => {
   } finally {
     isSubmitting.value = false
   }
+}
+
+const insertTextareaLineBreak = (event: KeyboardEvent) => {
+  const target = event.target
+  if (!(target instanceof HTMLTextAreaElement)) return
+  const start = target.selectionStart
+  const end = target.selectionEnd
+  target.value = `${target.value.slice(0, start)}\n${target.value.slice(end)}`
+  target.selectionStart = start + 1
+  target.selectionEnd = start + 1
+  target.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+const handleTaskInputKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Enter' || event.isComposing) return
+  event.preventDefault()
+  if (event.ctrlKey || event.shiftKey) {
+    insertTextareaLineBreak(event)
+    return
+  }
+  if (submitDisabled.value) return
+  taskSubmitButtonRef.value?.click()
 }
 
 onMounted(() => {

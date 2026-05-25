@@ -5,13 +5,70 @@ export type ClientOptions = {
 };
 
 /**
- * AgentTraceResponse
+ * Body_create_task_api_docgen_agent_task_create_post
  */
-export type AgentTraceResponse = {
+export type BodyCreateTaskApiDocgenAgentTaskCreatePost = {
     /**
-     * Run Id
+     * Prompt
+     *
+     * 前端用户的提示词
      */
-    run_id: string;
+    prompt?: string;
+    /**
+     * Doc Type
+     *
+     * 目标文档类型
+     */
+    doc_type?: '需求规格说明书' | '架构设计文档' | '测试文档';
+    /**
+     * Source File
+     *
+     * 需求文件（txt/md），兼容旧字段
+     */
+    source_file?: Blob | File | null;
+    /**
+     * Source Files
+     *
+     * 需求/依赖文件列表（txt/md）
+     */
+    source_files?: Array<Blob | File> | null;
+    /**
+     * Task Id
+     *
+     * 任务 ID；不传则后端生成
+     */
+    task_id?: string | null;
+};
+
+/**
+ * Category
+ *
+ * Enumeration for document categories.
+ */
+export type Category = 'test_case' | 'drg_group' | 'requirement' | 'ARCH' | 'test_case_doc' | 'any';
+
+/**
+ * DocgenTaskStatusResponse
+ */
+export type DocgenTaskStatusResponse = {
+    /**
+     * Task Id
+     */
+    task_id: string;
+    /**
+     * Task Status
+     */
+    task_status: string;
+};
+
+/**
+ * DocgenTaskTraceResponse
+ */
+export type DocgenTaskTraceResponse = {
+    /**
+     * Task Id
+     */
+    task_id: string;
     /**
      * Status
      */
@@ -20,6 +77,14 @@ export type AgentTraceResponse = {
      * Doc Type
      */
     doc_type?: string;
+    /**
+     * Task Title
+     */
+    task_title?: string;
+    /**
+     * Document Id
+     */
+    document_id?: number | null;
     /**
      * Created At
      */
@@ -41,10 +106,6 @@ export type AgentTraceResponse = {
      */
     error?: string | null;
     /**
-     * Interrupted
-     */
-    interrupted?: boolean;
-    /**
      * Terminated
      */
     terminated?: boolean;
@@ -55,105 +116,6 @@ export type AgentTraceResponse = {
         [key: string]: unknown;
     }>;
 };
-
-/**
- * AppendHintResponse
- */
-export type AppendHintResponse = {
-    /**
-     * Status
-     */
-    status: string;
-    /**
-     * Run Id
-     */
-    run_id: string;
-};
-
-/**
- * Body_append_hint_api_docgen_agent_runs__run_id__hint_post
- */
-export type BodyAppendHintApiDocgenAgentRunsRunIdHintPost = {
-    /**
-     * Hint
-     *
-     * 追加的提示词或指导内容
-     */
-    hint: string;
-    /**
-     * Source File
-     *
-     * 追加的参考文件
-     */
-    source_file?: Blob | File | null;
-};
-
-/**
- * Body_generate_doc_api_docgen_agent_generate_doc_post
- */
-export type BodyGenerateDocApiDocgenAgentGenerateDocPost = {
-    /**
-     * Prompt
-     *
-     * 前端用户的提示词
-     */
-    prompt?: string;
-    /**
-     * Doc Type
-     *
-     * 目标文档类型
-     */
-    doc_type?: '需求规格说明书' | '架构设计文档' | '测试文档';
-    /**
-     * Source File
-     *
-     * 需求文件（txt/md）
-     */
-    source_file?: Blob | File | null;
-    /**
-     * Run Id
-     *
-     * 运行 ID；前端可自生成后用于轮询 trace 或中断
-     */
-    run_id?: string | null;
-};
-
-/**
- * Body_start_generate_doc_api_docgen_agent_generate_doc_start_post
- */
-export type BodyStartGenerateDocApiDocgenAgentGenerateDocStartPost = {
-    /**
-     * Prompt
-     *
-     * 前端用户的提示词
-     */
-    prompt?: string;
-    /**
-     * Doc Type
-     *
-     * 目标文档类型
-     */
-    doc_type?: '需求规格说明书' | '架构设计文档' | '测试文档';
-    /**
-     * Source File
-     *
-     * 需求文件（txt/md）
-     */
-    source_file?: Blob | File | null;
-    /**
-     * Run Id
-     *
-     * 运行 ID；不传则后端生成
-     */
-    run_id?: string | null;
-};
-
-/**
- * Category
- *
- * Enumeration for document categories.
- */
-export type Category = 'test_case' | 'drg_group' | 'requirement' | 'ARCH' | 'test_case_doc' | 'any';
 
 /**
  * Document
@@ -190,36 +152,6 @@ export type Document = {
 };
 
 /**
- * GenerateDocResponse
- */
-export type GenerateDocResponse = {
-    /**
-     * Status
-     */
-    status: string;
-    /**
-     * Run Id
-     */
-    run_id: string;
-    /**
-     * File Name
-     */
-    file_name?: string;
-    /**
-     * File Path
-     */
-    file_path?: string;
-    /**
-     * Pdf Path
-     */
-    pdf_path?: string;
-    /**
-     * Doc Type
-     */
-    doc_type: string;
-};
-
-/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -227,20 +159,6 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
-};
-
-/**
- * InterruptResponse
- */
-export type InterruptResponse = {
-    /**
-     * Status
-     */
-    status: string;
-    /**
-     * Run Id
-     */
-    run_id: string;
 };
 
 /**
@@ -280,21 +198,25 @@ export type SignupRequest = {
 };
 
 /**
- * StartGenerateDocResponse
+ * StartDocgenTaskResponse
  */
-export type StartGenerateDocResponse = {
+export type StartDocgenTaskResponse = {
     /**
      * Status
      */
     status: string;
     /**
-     * Run Id
+     * Task Id
      */
-    run_id: string;
+    task_id: string;
     /**
      * Doc Type
      */
     doc_type: string;
+    /**
+     * Task Title
+     */
+    task_title?: string;
 };
 
 /**
@@ -385,9 +307,9 @@ export type TerminateResponse = {
      */
     status: string;
     /**
-     * Run Id
+     * Task Id
      */
-    run_id: string;
+    task_id: string;
 };
 
 /**
@@ -635,181 +557,258 @@ export type GetDocApiDocIdGetResponses = {
 
 export type GetDocApiDocIdGetResponse = GetDocApiDocIdGetResponses[keyof GetDocApiDocIdGetResponses];
 
-export type GenerateDocApiDocgenAgentGenerateDocPostData = {
-    body?: BodyGenerateDocApiDocgenAgentGenerateDocPost;
+export type CreateTaskApiDocgenAgentTaskCreatePostData = {
+    body?: BodyCreateTaskApiDocgenAgentTaskCreatePost;
     path?: never;
     query?: never;
-    url: '/api/docgen_agent/generate-doc';
+    url: '/api/docgen_agent/task/create';
 };
 
-export type GenerateDocApiDocgenAgentGenerateDocPostErrors = {
-    /**
-     * 参数错误
-     */
-    400: unknown;
+export type CreateTaskApiDocgenAgentTaskCreatePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
-    /**
-     * LLM 调用失败
-     */
-    500: unknown;
 };
 
-export type GenerateDocApiDocgenAgentGenerateDocPostError = GenerateDocApiDocgenAgentGenerateDocPostErrors[keyof GenerateDocApiDocgenAgentGenerateDocPostErrors];
+export type CreateTaskApiDocgenAgentTaskCreatePostError = CreateTaskApiDocgenAgentTaskCreatePostErrors[keyof CreateTaskApiDocgenAgentTaskCreatePostErrors];
 
-export type GenerateDocApiDocgenAgentGenerateDocPostResponses = {
+export type CreateTaskApiDocgenAgentTaskCreatePostResponses = {
     /**
-     * 文档生成成功
+     * Successful Response
      */
-    200: GenerateDocResponse;
+    200: StartDocgenTaskResponse;
 };
 
-export type GenerateDocApiDocgenAgentGenerateDocPostResponse = GenerateDocApiDocgenAgentGenerateDocPostResponses[keyof GenerateDocApiDocgenAgentGenerateDocPostResponses];
+export type CreateTaskApiDocgenAgentTaskCreatePostResponse = CreateTaskApiDocgenAgentTaskCreatePostResponses[keyof CreateTaskApiDocgenAgentTaskCreatePostResponses];
 
-export type StartGenerateDocApiDocgenAgentGenerateDocStartPostData = {
-    body?: BodyStartGenerateDocApiDocgenAgentGenerateDocStartPost;
+export type GetTaskListApiDocgenAgentTaskListGetData = {
+    body?: never;
     path?: never;
     query?: never;
-    url: '/api/docgen_agent/generate-doc/start';
+    url: '/api/docgen_agent/task/list';
 };
 
-export type StartGenerateDocApiDocgenAgentGenerateDocStartPostErrors = {
+export type GetTaskListApiDocgenAgentTaskListGetResponses = {
+    /**
+     * Response Get Task List Api Docgen Agent Task List Get
+     *
+     * Successful Response
+     */
+    200: Array<DocgenTaskTraceResponse>;
+};
+
+export type GetTaskListApiDocgenAgentTaskListGetResponse = GetTaskListApiDocgenAgentTaskListGetResponses[keyof GetTaskListApiDocgenAgentTaskListGetResponses];
+
+export type GetTaskStatusApiDocgenAgentTaskStatusGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Task Ids
+         *
+         * The task ids to get status
+         */
+        task_ids: Array<string>;
+    };
+    url: '/api/docgen_agent/task/status';
+};
+
+export type GetTaskStatusApiDocgenAgentTaskStatusGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type StartGenerateDocApiDocgenAgentGenerateDocStartPostError = StartGenerateDocApiDocgenAgentGenerateDocStartPostErrors[keyof StartGenerateDocApiDocgenAgentGenerateDocStartPostErrors];
+export type GetTaskStatusApiDocgenAgentTaskStatusGetError = GetTaskStatusApiDocgenAgentTaskStatusGetErrors[keyof GetTaskStatusApiDocgenAgentTaskStatusGetErrors];
 
-export type StartGenerateDocApiDocgenAgentGenerateDocStartPostResponses = {
+export type GetTaskStatusApiDocgenAgentTaskStatusGetResponses = {
     /**
+     * Response Get Task Status Api Docgen Agent Task Status Get
+     *
      * Successful Response
      */
-    200: StartGenerateDocResponse;
+    200: Array<DocgenTaskStatusResponse>;
 };
 
-export type StartGenerateDocApiDocgenAgentGenerateDocStartPostResponse = StartGenerateDocApiDocgenAgentGenerateDocStartPostResponses[keyof StartGenerateDocApiDocgenAgentGenerateDocStartPostResponses];
+export type GetTaskStatusApiDocgenAgentTaskStatusGetResponse = GetTaskStatusApiDocgenAgentTaskStatusGetResponses[keyof GetTaskStatusApiDocgenAgentTaskStatusGetResponses];
 
-export type ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetData = {
+export type ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetData = {
     body?: never;
     path: {
         /**
-         * Run Id
+         * Task Id
          */
-        run_id: string;
+        task_id: string;
     };
     query?: never;
-    url: '/api/docgen_agent/runs/{run_id}/trace';
+    url: '/api/docgen_agent/task/{task_id}/trace';
 };
 
-export type ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetErrors = {
+export type ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetError = ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetErrors[keyof ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetErrors];
+export type ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetError = ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetErrors[keyof ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetErrors];
 
-export type ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponses = {
+export type ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponses = {
     /**
      * Successful Response
      */
-    200: AgentTraceResponse;
+    200: DocgenTaskTraceResponse;
 };
 
-export type ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponse = ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponses[keyof ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponses];
+export type ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponse = ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponses[keyof ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponses];
 
-export type InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostData = {
+export type StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetData = {
     body?: never;
     path: {
         /**
-         * Run Id
+         * Task Id
          */
-        run_id: string;
+        task_id: string;
     };
     query?: never;
-    url: '/api/docgen_agent/runs/{run_id}/interrupt';
+    url: '/api/docgen_agent/task/{task_id}/trace/stream';
 };
 
-export type InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostErrors = {
+export type StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostError = InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostErrors[keyof InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostErrors];
+export type StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetError = StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetErrors[keyof StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetErrors];
 
-export type InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponses = {
+export type StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetResponses = {
     /**
      * Successful Response
      */
-    200: InterruptResponse;
+    200: unknown;
 };
 
-export type InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponse = InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponses[keyof InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponses];
-
-export type TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostData = {
+export type TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostData = {
     body?: never;
     path: {
         /**
-         * Run Id
+         * Task Id
          */
-        run_id: string;
+        task_id: string;
     };
     query?: never;
-    url: '/api/docgen_agent/runs/{run_id}/terminate';
+    url: '/api/docgen_agent/task/{task_id}/terminate';
 };
 
-export type TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostErrors = {
+export type TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostError = TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostErrors[keyof TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostErrors];
+export type TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostError = TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostErrors[keyof TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostErrors];
 
-export type TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponses = {
+export type TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses = {
     /**
      * Successful Response
      */
     200: TerminateResponse;
 };
 
-export type TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponse = TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponses[keyof TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponses];
+export type TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponse = TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses[keyof TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses];
 
-export type DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetData = {
+export type DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData = {
     body?: never;
     path: {
         /**
-         * Run Id
+         * Task Id
          */
-        run_id: string;
+        task_id: string;
     };
     query?: never;
-    url: '/api/docgen_agent/runs/{run_id}/download';
+    url: '/api/docgen_agent/task/{task_id}/download';
 };
 
-export type DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetErrors = {
+export type DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetError = DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetErrors[keyof DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetErrors];
+export type DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetError = DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors[keyof DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors];
 
-export type DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetResponses = {
+export type DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetResponses = {
     /**
      * Successful Response
      */
     200: unknown;
 };
+
+export type DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/docgen_agent/task/{task_id}/download/pdf';
+};
+
+export type DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetError = DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors[keyof DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors];
+
+export type DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type DeleteTaskApiDocgenAgentTaskTaskIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/docgen_agent/task/{task_id}';
+};
+
+export type DeleteTaskApiDocgenAgentTaskTaskIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteTaskApiDocgenAgentTaskTaskIdDeleteError = DeleteTaskApiDocgenAgentTaskTaskIdDeleteErrors[keyof DeleteTaskApiDocgenAgentTaskTaskIdDeleteErrors];
+
+export type DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponses = {
+    /**
+     * Response Delete Task Api Docgen Agent Task  Task Id  Delete
+     *
+     * Successful Response
+     */
+    200: boolean;
+};
+
+export type DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponse = DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponses[keyof DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponses];
 
 export type DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData = {
     body?: never;
@@ -833,64 +832,6 @@ export type DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors = {
 export type DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetError = DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors[keyof DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors];
 
 export type DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type AppendHintApiDocgenAgentRunsRunIdHintPostData = {
-    body: BodyAppendHintApiDocgenAgentRunsRunIdHintPost;
-    path: {
-        /**
-         * Run Id
-         */
-        run_id: string;
-    };
-    query?: never;
-    url: '/api/docgen_agent/runs/{run_id}/hint';
-};
-
-export type AppendHintApiDocgenAgentRunsRunIdHintPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type AppendHintApiDocgenAgentRunsRunIdHintPostError = AppendHintApiDocgenAgentRunsRunIdHintPostErrors[keyof AppendHintApiDocgenAgentRunsRunIdHintPostErrors];
-
-export type AppendHintApiDocgenAgentRunsRunIdHintPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: AppendHintResponse;
-};
-
-export type AppendHintApiDocgenAgentRunsRunIdHintPostResponse = AppendHintApiDocgenAgentRunsRunIdHintPostResponses[keyof AppendHintApiDocgenAgentRunsRunIdHintPostResponses];
-
-export type DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetData = {
-    body?: never;
-    path: {
-        /**
-         * Run Id
-         */
-        run_id: string;
-    };
-    query?: never;
-    url: '/api/docgen_agent/runs/{run_id}/download/pdf';
-};
-
-export type DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetError = DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetErrors[keyof DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetErrors];
-
-export type DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetResponses = {
     /**
      * Successful Response
      */

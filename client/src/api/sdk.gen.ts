@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AppendHintApiDocgenAgentRunsRunIdHintPostData, AppendHintApiDocgenAgentRunsRunIdHintPostErrors, AppendHintApiDocgenAgentRunsRunIdHintPostResponses, CreateTaskApiDrgTaskCreatePostData, CreateTaskApiDrgTaskCreatePostErrors, CreateTaskApiDrgTaskCreatePostResponses, DeleteTaskApiDrgTaskTaskIdDeleteData, DeleteTaskApiDrgTaskTaskIdDeleteErrors, DeleteTaskApiDrgTaskTaskIdDeleteResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetData, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetErrors, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetResponses, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetData, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetErrors, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetResponses, GenerateDocApiDocgenAgentGenerateDocPostData, GenerateDocApiDocgenAgentGenerateDocPostErrors, GenerateDocApiDocgenAgentGenerateDocPostResponses, GetDocApiDocIdGetData, GetDocApiDocIdGetErrors, GetDocApiDocIdGetResponses, GetTaskListApiDrgTaskListGetData, GetTaskListApiDrgTaskListGetResponses, GetTaskProgressApiDrgTaskTaskIdProgressStepGetData, GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors, GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses, GetTaskResultApiDrgTaskResultTaskIdGetData, GetTaskResultApiDrgTaskResultTaskIdGetErrors, GetTaskResultApiDrgTaskResultTaskIdGetResponses, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetData, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetResponses, GetTaskStatusApiDrgTaskStatusGetData, GetTaskStatusApiDrgTaskStatusGetErrors, GetTaskStatusApiDrgTaskStatusGetResponses, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostData, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostErrors, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponses, ListCategoriesApiDocCategoriesGetData, ListCategoriesApiDocCategoriesGetResponses, ListDocsApiDocListPostData, ListDocsApiDocListPostErrors, ListDocsApiDocListPostResponses, ListDocTypesApiDocgenAgentDocTypesGetData, ListDocTypesApiDocgenAgentDocTypesGetResponses, LoginApiAuthLoginPostData, LoginApiAuthLoginPostErrors, LoginApiAuthLoginPostResponses, LogoutApiAuthLogoutPostData, LogoutApiAuthLogoutPostResponses, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetData, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetErrors, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponses, RefreshAccessTokenApiAuthRefreshPostData, RefreshAccessTokenApiAuthRefreshPostErrors, RefreshAccessTokenApiAuthRefreshPostResponses, RootGetData, RootGetResponses, ServeSpaFullPathGetData, ServeSpaFullPathGetErrors, ServeSpaFullPathGetResponses, SignupApiAuthSignupPostData, SignupApiAuthSignupPostErrors, SignupApiAuthSignupPostResponses, StartGenerateDocApiDocgenAgentGenerateDocStartPostData, StartGenerateDocApiDocgenAgentGenerateDocStartPostErrors, StartGenerateDocApiDocgenAgentGenerateDocStartPostResponses, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostData, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostErrors, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponses } from './types.gen';
+import type { CreateTaskApiDocgenAgentTaskCreatePostData, CreateTaskApiDocgenAgentTaskCreatePostErrors, CreateTaskApiDocgenAgentTaskCreatePostResponses, CreateTaskApiDrgTaskCreatePostData, CreateTaskApiDrgTaskCreatePostErrors, CreateTaskApiDrgTaskCreatePostResponses, DeleteTaskApiDocgenAgentTaskTaskIdDeleteData, DeleteTaskApiDocgenAgentTaskTaskIdDeleteErrors, DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponses, DeleteTaskApiDrgTaskTaskIdDeleteData, DeleteTaskApiDrgTaskTaskIdDeleteErrors, DeleteTaskApiDrgTaskTaskIdDeleteResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetData, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetResponses, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetResponses, GetDocApiDocIdGetData, GetDocApiDocIdGetErrors, GetDocApiDocIdGetResponses, GetTaskListApiDocgenAgentTaskListGetData, GetTaskListApiDocgenAgentTaskListGetResponses, GetTaskListApiDrgTaskListGetData, GetTaskListApiDrgTaskListGetResponses, GetTaskProgressApiDrgTaskTaskIdProgressStepGetData, GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors, GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses, GetTaskResultApiDrgTaskResultTaskIdGetData, GetTaskResultApiDrgTaskResultTaskIdGetErrors, GetTaskResultApiDrgTaskResultTaskIdGetResponses, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetData, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetResponses, GetTaskStatusApiDocgenAgentTaskStatusGetData, GetTaskStatusApiDocgenAgentTaskStatusGetErrors, GetTaskStatusApiDocgenAgentTaskStatusGetResponses, GetTaskStatusApiDrgTaskStatusGetData, GetTaskStatusApiDrgTaskStatusGetErrors, GetTaskStatusApiDrgTaskStatusGetResponses, ListCategoriesApiDocCategoriesGetData, ListCategoriesApiDocCategoriesGetResponses, ListDocsApiDocListPostData, ListDocsApiDocListPostErrors, ListDocsApiDocListPostResponses, ListDocTypesApiDocgenAgentDocTypesGetData, ListDocTypesApiDocgenAgentDocTypesGetResponses, LoginApiAuthLoginPostData, LoginApiAuthLoginPostErrors, LoginApiAuthLoginPostResponses, LogoutApiAuthLogoutPostData, LogoutApiAuthLogoutPostResponses, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetData, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetErrors, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponses, RefreshAccessTokenApiAuthRefreshPostData, RefreshAccessTokenApiAuthRefreshPostErrors, RefreshAccessTokenApiAuthRefreshPostResponses, RootGetData, RootGetResponses, ServeSpaFullPathGetData, ServeSpaFullPathGetErrors, ServeSpaFullPathGetResponses, SignupApiAuthSignupPostData, SignupApiAuthSignupPostErrors, SignupApiAuthSignupPostResponses, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetData, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetErrors, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetResponses, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostData, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostErrors, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -107,17 +107,15 @@ export const getDocApiDocIdGet = <ThrowOnError extends boolean = false>(options:
 });
 
 /**
- * Generate Doc
+ * Create Task
  *
- * 生成技术文档。
- *
- * 接收前端提示词 + 可选的需求文件，按 doc_type 生成 Markdown 文档。
- * 若未上传 source_file，默认使用 requirement.md。
+ * 创建后台文档生成任务，立即返回 task_id。
  */
-export const generateDocApiDocgenAgentGenerateDocPost = <ThrowOnError extends boolean = false>(options?: Options<GenerateDocApiDocgenAgentGenerateDocPostData, ThrowOnError>) => (options?.client ?? client).post<GenerateDocApiDocgenAgentGenerateDocPostResponses, GenerateDocApiDocgenAgentGenerateDocPostErrors, ThrowOnError>({
+export const createTaskApiDocgenAgentTaskCreatePost = <ThrowOnError extends boolean = false>(options?: Options<CreateTaskApiDocgenAgentTaskCreatePostData, ThrowOnError>) => (options?.client ?? client).post<CreateTaskApiDocgenAgentTaskCreatePostResponses, CreateTaskApiDocgenAgentTaskCreatePostErrors, ThrowOnError>({
     ...formDataBodySerializer,
     responseType: 'json',
-    url: '/api/docgen_agent/generate-doc',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/docgen_agent/task/create',
     ...options,
     headers: {
         'Content-Type': null,
@@ -126,62 +124,89 @@ export const generateDocApiDocgenAgentGenerateDocPost = <ThrowOnError extends bo
 });
 
 /**
- * Start Generate Doc
+ * Get Task List
  *
- * 启动后台生成任务，立即返回 run_id，前端可用 trace/interrupt 接口轮询和中断。
+ * 读取当前用户的文档生成任务列表。
  */
-export const startGenerateDocApiDocgenAgentGenerateDocStartPost = <ThrowOnError extends boolean = false>(options?: Options<StartGenerateDocApiDocgenAgentGenerateDocStartPostData, ThrowOnError>) => (options?.client ?? client).post<StartGenerateDocApiDocgenAgentGenerateDocStartPostResponses, StartGenerateDocApiDocgenAgentGenerateDocStartPostErrors, ThrowOnError>({
-    ...formDataBodySerializer,
+export const getTaskListApiDocgenAgentTaskListGet = <ThrowOnError extends boolean = false>(options?: Options<GetTaskListApiDocgenAgentTaskListGetData, ThrowOnError>) => (options?.client ?? client).get<GetTaskListApiDocgenAgentTaskListGetResponses, unknown, ThrowOnError>({
     responseType: 'json',
-    url: '/api/docgen_agent/generate-doc/start',
-    ...options,
-    headers: {
-        'Content-Type': null,
-        ...options?.headers
-    }
-});
-
-/**
- * Read Generation Trace
- *
- * 读取智能体生成过程，包含阶段、模型输出、reasoning_content、工具调用和工具结果摘要。
- */
-export const readGenerationTraceApiDocgenAgentRunsRunIdTraceGet = <ThrowOnError extends boolean = false>(options: Options<ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetData, ThrowOnError>) => (options.client ?? client).get<ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetResponses, ReadGenerationTraceApiDocgenAgentRunsRunIdTraceGetErrors, ThrowOnError>({
-    responseType: 'json',
-    url: '/api/docgen_agent/runs/{run_id}/trace',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/docgen_agent/task/list',
     ...options
 });
 
 /**
- * Interrupt Generation
- *
- * 请求中断指定文档生成任务。
+ * Get Task Status
  */
-export const interruptGenerationApiDocgenAgentRunsRunIdInterruptPost = <ThrowOnError extends boolean = false>(options: Options<InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostData, ThrowOnError>) => (options.client ?? client).post<InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostResponses, InterruptGenerationApiDocgenAgentRunsRunIdInterruptPostErrors, ThrowOnError>({
+export const getTaskStatusApiDocgenAgentTaskStatusGet = <ThrowOnError extends boolean = false>(options: Options<GetTaskStatusApiDocgenAgentTaskStatusGetData, ThrowOnError>) => (options.client ?? client).get<GetTaskStatusApiDocgenAgentTaskStatusGetResponses, GetTaskStatusApiDocgenAgentTaskStatusGetErrors, ThrowOnError>({
     responseType: 'json',
-    url: '/api/docgen_agent/runs/{run_id}/interrupt',
+    url: '/api/docgen_agent/task/status',
     ...options
 });
 
 /**
- * Terminate Generation
+ * Read Task Trace
  *
- * 请求终止指定文档生成任务。
+ * 读取文档生成任务过程，包含阶段、模型输出、工具调用和工具结果摘要。
  */
-export const terminateGenerationApiDocgenAgentRunsRunIdTerminatePost = <ThrowOnError extends boolean = false>(options: Options<TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostData, ThrowOnError>) => (options.client ?? client).post<TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostResponses, TerminateGenerationApiDocgenAgentRunsRunIdTerminatePostErrors, ThrowOnError>({
+export const readTaskTraceApiDocgenAgentTaskTaskIdTraceGet = <ThrowOnError extends boolean = false>(options: Options<ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetData, ThrowOnError>) => (options.client ?? client).get<ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponses, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetErrors, ThrowOnError>({
     responseType: 'json',
-    url: '/api/docgen_agent/runs/{run_id}/terminate',
+    url: '/api/docgen_agent/task/{task_id}/trace',
     ...options
 });
 
 /**
- * Download Generation Result
+ * Stream Task Trace
  *
- * 下载指定运行最终生成的 Markdown 文档。
+ * 以 SSE 方式持续推送 trace 快照，用于前端即时显示思考和工具调用。
  */
-export const downloadGenerationResultApiDocgenAgentRunsRunIdDownloadGet = <ThrowOnError extends boolean = false>(options: Options<DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetData, ThrowOnError>) => (options.client ?? client).get<DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetResponses, DownloadGenerationResultApiDocgenAgentRunsRunIdDownloadGetErrors, ThrowOnError>({
+export const streamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGet = <ThrowOnError extends boolean = false>(options: Options<StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetData, ThrowOnError>) => (options.client ?? client).get<StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetResponses, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetErrors, ThrowOnError>({
     responseType: 'json',
-    url: '/api/docgen_agent/runs/{run_id}/download',
+    url: '/api/docgen_agent/task/{task_id}/trace/stream',
+    ...options
+});
+
+/**
+ * Terminate Task
+ *
+ * 请求协作式终止指定文档生成任务。
+ */
+export const terminateTaskApiDocgenAgentTaskTaskIdTerminatePost = <ThrowOnError extends boolean = false>(options: Options<TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostData, ThrowOnError>) => (options.client ?? client).post<TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/api/docgen_agent/task/{task_id}/terminate',
+    ...options
+});
+
+/**
+ * Download Task Result
+ *
+ * 下载指定任务最终生成的 Markdown 文档。
+ */
+export const downloadTaskResultApiDocgenAgentTaskTaskIdDownloadGet = <ThrowOnError extends boolean = false>(options: Options<DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData, ThrowOnError>) => (options.client ?? client).get<DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetResponses, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/api/docgen_agent/task/{task_id}/download',
+    ...options
+});
+
+/**
+ * Download Task Pdf
+ *
+ * 下载指定任务生成的 PDF 文档。
+ */
+export const downloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGet = <ThrowOnError extends boolean = false>(options: Options<DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetData, ThrowOnError>) => (options.client ?? client).get<DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetResponses, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/api/docgen_agent/task/{task_id}/download/pdf',
+    ...options
+});
+
+/**
+ * Delete Task
+ *
+ * 删除已结束的文档生成任务。运行中的任务不能删除。
+ */
+export const deleteTaskApiDocgenAgentTaskTaskIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteTaskApiDocgenAgentTaskTaskIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponses, DeleteTaskApiDocgenAgentTaskTaskIdDeleteErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/api/docgen_agent/task/{task_id}',
     ...options
 });
 
@@ -193,33 +218,6 @@ export const downloadGenerationResultApiDocgenAgentRunsRunIdDownloadGet = <Throw
 export const downloadDocumentApiDocgenAgentDocumentsFileNameDownloadGet = <ThrowOnError extends boolean = false>(options: Options<DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, ThrowOnError>) => (options.client ?? client).get<DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, ThrowOnError>({
     responseType: 'json',
     url: '/api/docgen_agent/documents/{file_name}/download',
-    ...options
-});
-
-/**
- * Append Hint
- *
- * 在文档生成运行中追加用户提示词，下一轮 LLM 调用时会作为 user 消息注入。
- */
-export const appendHintApiDocgenAgentRunsRunIdHintPost = <ThrowOnError extends boolean = false>(options: Options<AppendHintApiDocgenAgentRunsRunIdHintPostData, ThrowOnError>) => (options.client ?? client).post<AppendHintApiDocgenAgentRunsRunIdHintPostResponses, AppendHintApiDocgenAgentRunsRunIdHintPostErrors, ThrowOnError>({
-    ...formDataBodySerializer,
-    responseType: 'json',
-    url: '/api/docgen_agent/runs/{run_id}/hint',
-    ...options,
-    headers: {
-        'Content-Type': null,
-        ...options.headers
-    }
-});
-
-/**
- * Download Generation Pdf
- *
- * 下载指定运行生成的 PDF 文档。
- */
-export const downloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGet = <ThrowOnError extends boolean = false>(options: Options<DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetData, ThrowOnError>) => (options.client ?? client).get<DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetResponses, DownloadGenerationPdfApiDocgenAgentRunsRunIdDownloadPdfGetErrors, ThrowOnError>({
-    responseType: 'json',
-    url: '/api/docgen_agent/runs/{run_id}/download/pdf',
     ...options
 });
 
