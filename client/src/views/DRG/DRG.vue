@@ -545,7 +545,7 @@ function startStatusPolling() {
     } catch {
       // 状态轮询失败静默跳过
     }
-  }, 1000)
+  }, 5000)
 }
 
 watch(selectedTaskId, (newId) => {
