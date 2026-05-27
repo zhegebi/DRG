@@ -1161,6 +1161,7 @@ onUnmounted(() => {
 }
 
 .result-panel {
+  box-sizing: border-box;
   width: 100%;
   min-height: 200px;
   padding: 20px 24px;
