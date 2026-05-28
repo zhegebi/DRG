@@ -97,6 +97,32 @@
               </div>
             </div>
 
+            <div class="generation-mode-dropdown">
+              <button
+                class="doc-type-control generation-mode-trigger"
+                type="button"
+                :aria-expanded="generationModeMenuOpen"
+                :title="selectedGenerationModeConfig.label"
+                aria-label="生成模式"
+                @click="generationModeMenuOpen = !generationModeMenuOpen"
+              >
+                <SvgIcon type="mdi" :path="mdiFileDocumentOutline" class="button-icon" />
+              </button>
+              <div v-if="generationModeMenuOpen" class="generation-mode-menu">
+                <button
+                  v-for="mode in generationModes"
+                  :key="mode.value"
+                  class="generation-mode-option"
+                  :class="{ checked: selectedGenerationMode === mode.value }"
+                  type="button"
+                  @click="selectedGenerationMode = mode.value; generationModeMenuOpen = false"
+                >
+                  <span class="generation-mode-label">{{ mode.label }}</span>
+                  <span class="generation-mode-description">{{ mode.description }}</span>
+                </button>
+              </div>
+            </div>
+
             <button
               ref="docSubmitButtonRef"
               class="submit-button"
@@ -143,7 +169,7 @@
                 v-if="chapterProgressItems.length"
                 class="header-progress-rail"
                 :class="{
-                  'progress-flowing': headerProgressRatio > 0,
+                  'progress-flowing': isHeaderProgressFlowing,
                   'progress-completed': isHeaderProgressCompleted,
                 }"
                 :style="headerProgressStyle"
@@ -255,7 +281,6 @@
                     <div
                       v-if="group.events.length"
                       class="process-event-list unified"
-                      @scroll="onProcessEventListScroll($event, task.run.run_id, group)"
                     >
                       <article
                         v-for="eventGroup in visibleProcessEventGroups(task.run.run_id, group)"
@@ -285,9 +310,6 @@
                               {{ processEventKindLabelMap[eventGroup.kind] }}
                             </span>
                             <h3>{{ eventGroup.title }}</h3>
-                            <p v-if="processEventSummary(eventGroup)" class="process-event-summary">
-                              {{ processEventSummary(eventGroup) }}
-                            </p>
                           </div>
                           <div class="process-event-meta">
                             <SvgIcon
@@ -297,10 +319,8 @@
                               class="process-event-loading loading-icon"
                             />
                             <time>{{ formatTime(lastProcessEvent(eventGroup).time) }}</time>
-                            <span v-if="lastProcessEvent(eventGroup).turn" class="process-event-turn">
-                              Turn {{ lastProcessEvent(eventGroup).turn }}
-                            </span>
                             <span
+                              v-if="shouldShowProcessEventGroupStatus(eventGroup)"
                               class="process-event-current-status"
                               :class="`process-event-current-${eventGroup.state}`"
                               :title="processEventGroupStatusText(eventGroup)"
@@ -323,41 +343,69 @@
                           v-if="isProcessEventExpanded(task.run.run_id, group, eventGroup)
                             && visibleProcessEntries(task.run.run_id, group, eventGroup).length"
                           class="process-event-entry-list"
-                          @scroll="onProcessEntryListScroll($event, task.run.run_id, group, eventGroup)"
                         >
                           <div class="process-event-entry-panel">
                             <div
                               v-for="evt in visibleProcessEntries(task.run.run_id, group, eventGroup)"
                               :key="`${eventGroup.key}-${evt.id}`"
                               class="process-event-entry"
-                              :class="`process-event-entry-${processEventKind(evt)}`"
+                              :class="[
+                                `process-event-entry-${processEventKind(evt)}`,
+                                { 'process-event-entry-request': evt.type === 'llm_request' },
+                              ]"
                             >
-                              <div class="process-event-entry-head">
-                                <span class="process-event-entry-title">
-                                  <strong>{{ processEventEntryTitle(evt, group) }}</strong>
-                                  <span
-                                    class="process-event-entry-status"
-                                    :class="`process-event-current-${processEventEntryState(evt, eventGroup)}`"
-                                    :title="processEventEntryStatusText(evt, eventGroup)"
-                                    :aria-label="processEventEntryStatusText(evt, eventGroup)"
-                                  >
-                                    <SvgIcon
-                                      type="mdi"
-                                      :path="processExecutionStatusIcon(processEventEntryState(evt, eventGroup))"
-                                      :class="[
-                                        'process-status-icon',
-                                        { 'loading-icon': processEventEntryState(evt, eventGroup) === 'running' },
-                                      ]"
-                                    />
-                                  </span>
-                                </span>
-                                <time>{{ formatTime(evt.time) }}</time>
+                              <div v-if="isRequestRecordEvent(evt)" class="process-request-record">
+                                <div class="process-request-main">
+                                  <span class="process-request-turn">{{ processRequestTurnLabel(evt) }}</span>
+                                  <span class="process-request-context">{{ processRequestRecordContext(evt, group) }}</span>
+                                </div>
+                                <time class="process-request-time">{{ formatTime(evt.time) }}</time>
                               </div>
-                              <pre
-                                v-if="eventHasBody(evt)"
-                                class="process-event-body"
-                                :class="{ streaming: isStreamingEventForRun(task.run, evt), prose: processEventKind(evt) !== 'tool' }"
-                              >{{ processEventBody(evt) }}</pre>
+                              <template v-else>
+                                <div class="process-event-entry-head">
+                                  <span class="process-event-entry-title">
+                                    <strong>{{ processEventEntryTitle(evt, group) }}</strong>
+                                  </span>
+                                  <span class="process-event-entry-meta">
+                                    <time>{{ formatTime(evt.time) }}</time>
+                                    <span
+                                      v-if="shouldShowProcessEventEntryStatus(evt)"
+                                      class="process-event-entry-status"
+                                      :class="`process-event-current-${processEventEntryState(evt, eventGroup)}`"
+                                      :title="processEventEntryStatusText(evt, eventGroup)"
+                                      :aria-label="processEventEntryStatusText(evt, eventGroup)"
+                                    >
+                                      <SvgIcon
+                                        type="mdi"
+                                        :path="processExecutionStatusIcon(processEventEntryState(evt, eventGroup))"
+                                        :class="[
+                                          'process-status-icon',
+                                          { 'loading-icon': processEventEntryState(evt, eventGroup) === 'running' },
+                                        ]"
+                                      />
+                                    </span>
+                                  </span>
+                                </div>
+                                <div
+                                  v-if="processEventDetailItems(evt).length"
+                                  class="process-event-detail-grid"
+                                >
+                                  <div
+                                    v-for="detail in processEventDetailItems(evt)"
+                                    :key="detail.label"
+                                    class="process-event-detail-item"
+                                    :class="{ wide: detail.wide }"
+                                  >
+                                    <span class="process-event-detail-label">{{ detail.label }}</span>
+                                    <span class="process-event-detail-value">{{ detail.value }}</span>
+                                  </div>
+                                </div>
+                                <pre
+                                  v-else-if="eventHasBody(evt)"
+                                  class="process-event-body"
+                                  :class="{ streaming: isStreamingEventForRun(task.run, evt), prose: processEventKind(evt) !== 'tool' }"
+                                >{{ processEventBody(evt) }}</pre>
+                              </template>
                             </div>
                           </div>
                           <button
@@ -496,6 +544,29 @@
             class="drawer-markdown-preview"
             v-html="previewMarkdownHtml"
           ></div>
+          <div
+            v-if="previewFileKind === 'markdown' && previewImagePaths.length"
+            class="drawer-image-list"
+          >
+            <div class="drawer-image-list-header">
+              <SvgIcon type="mdi" :path="mdiFileImageOutline" class="button-icon" />
+              <span>文档图片（{{ previewImagePaths.length }} 张）</span>
+            </div>
+            <div class="drawer-image-items">
+              <button
+                v-for="img in previewImagePaths"
+                :key="img.path"
+                class="drawer-image-item"
+                type="button"
+                :title="`下载 ${img.alt}`"
+                @click="handleDownloadImage(img.path)"
+              >
+                <SvgIcon type="mdi" :path="mdiFileImageOutline" class="button-icon" />
+                <span class="drawer-image-name">{{ img.alt }}</span>
+                <SvgIcon type="mdi" :path="mdiDownload" class="button-icon drawer-image-download-icon" />
+              </button>
+            </div>
+          </div>
         </section>
 
         <div v-else class="final-output-card">
@@ -574,8 +645,10 @@ import {
   mdiChevronUp,
   mdiClockOutline,
   mdiClose,
+  mdiDownload,
   mdiFileDocumentOutline,
   mdiFileEyeOutline,
+  mdiFileImageOutline,
   mdiFilePdfBox,
   mdiFilePlusOutline,
   mdiFormatListBulletedType,
@@ -586,6 +659,7 @@ import {
 } from '@mdi/js'
 import {
   activeRunStatusSet,
+  downloadDocImage,
   downloadMarkdown,
   downloadPdf,
   eventTypeLabelMap,
@@ -601,6 +675,7 @@ import {
   terminateRun,
   type AgentTraceEvent,
   type DocType,
+  type GenerationMode,
   type RunTrace,
 } from './dogen_utils'
 
@@ -631,6 +706,12 @@ interface ProcessEventDisplayGroup {
   events: AgentTraceEvent[]
 }
 
+interface ProcessEventDetailItem {
+  label: string
+  value: string
+  wide?: boolean
+}
+
 interface ConversationMessageItem {
   key: string
   label: string
@@ -647,6 +728,16 @@ interface ConversationTaskItem {
 
 const docTypes = ref<DocType[]>(['需求规格说明书', '架构设计文档', '测试文档'])
 const selectedDocTypes = ref<DocType[]>(['需求规格说明书'])
+const defaultGenerationModeConfig: { value: GenerationMode, label: string, description: string } = {
+  value: 'structured',
+  label: '提示词+文件+规范',
+  description: '结合预定义 output 规范生成完整文档',
+}
+const generationModes: Array<{ value: GenerationMode, label: string, description: string }> = [
+  defaultGenerationModeConfig,
+  { value: 'prompt_only', label: '提示词+文件', description: '只按提示词和上传文件撰写' },
+]
+const selectedGenerationMode = ref<GenerationMode>('structured')
 const promptInput = ref('')
 const sourceFiles = ref<File[]>([])
 const isSubmitting = ref(false)
@@ -659,6 +750,7 @@ const sourceInputRef = ref<HTMLInputElement | null>(null)
 const docSubmitButtonRef = ref<HTMLButtonElement | null>(null)
 const previewDrawerOpen = ref(false)
 const docTypeMenuOpen = ref(false)
+const generationModeMenuOpen = ref(false)
 const previewFileKind = ref<'markdown' | 'pdf' | ''>('')
 const previewFileUrl = ref('')
 const previewFileText = ref('')
@@ -708,6 +800,10 @@ const selectedDocTypeLabel = computed(() => {
   if (selectedDocTypes.value.length === 0) return '文档类型'
   if (selectedDocTypes.value.length === 1) return selectedDocTypes.value[0]
   return `已选择 ${selectedDocTypes.value.length} 类文档`
+})
+
+const selectedGenerationModeConfig = computed(() => {
+  return generationModes.find((mode) => mode.value === selectedGenerationMode.value) || defaultGenerationModeConfig
 })
 
 const loadLocalRunIds = (): string[] => {
@@ -868,6 +964,7 @@ const openNewDoc = () => {
   errorMessage.value = ''
   closePreviewDrawer()
   docTypeMenuOpen.value = false
+  generationModeMenuOpen.value = false
   stopPolling()
 }
 
@@ -880,10 +977,11 @@ const submitGeneration = async () => {
       throw new Error('请至少选择一种文档类型')
     }
     docTypeMenuOpen.value = false
+    generationModeMenuOpen.value = false
     const initialPrompt = promptInput.value.trim()
     const startedRuns: RunTrace[] = []
     for (const docType of selectedDocTypes.value) {
-      const response = await startGeneration(initialPrompt, docType, sourceFiles.value)
+      const response = await startGeneration(initialPrompt, docType, sourceFiles.value, selectedGenerationMode.value)
       saveLocalRunId(response.task_id)
       saveRunPrompt(response.task_id, initialPrompt || docType)
       const stub: RunTrace = {
@@ -891,6 +989,7 @@ const submitGeneration = async () => {
         status: 'running',
         doc_type: response.doc_type,
         task_title: response.task_title || response.doc_type,
+        generation_mode: response.generation_mode || selectedGenerationMode.value,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         output_path: null,
@@ -946,6 +1045,7 @@ const selectRun = async (runId: string) => {
   previewFileKind.value = ''
   clearPreviewFile()
   docTypeMenuOpen.value = false
+  generationModeMenuOpen.value = false
   stopPolling()
   try {
     const trace = await getRunTrace(runId)
@@ -1026,6 +1126,31 @@ const previewFileTitle = computed(() => {
 const previewMarkdownHtml = computed(() => {
   return marked.parse(previewFileText.value || '', { async: false }) as string
 })
+
+const previewImagePaths = computed(() => {
+  const text = previewFileText.value
+  if (!text) return [] as { path: string; alt: string }[]
+  const regex = /!\[([^\]]*)\]\(([^)]+)\)/g
+  const results: { path: string; alt: string }[] = []
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    const path = match[2]
+    if (!path) continue
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) continue
+    if (results.some((r) => r.path === path)) continue
+    const alt = (match[1] || path.split('/').pop() || 'image') as string
+    results.push({ path, alt })
+  }
+  return results
+})
+
+const handleDownloadImage = async (imagePath: string) => {
+  try {
+    await downloadDocImage(imagePath)
+  } catch (error) {
+    previewError.value = `下载图片失败：${error}`
+  }
+}
 
 const handlePreviewFile = async (kind: 'markdown' | 'pdf') => {
   if (!selectedRunId.value || !canPreviewRunFile(kind)) return
@@ -1202,6 +1327,12 @@ const isHeaderProgressCompleted = computed(() => {
     && chapterProgressItems.value.every((item) => item.status === 'completed')
 })
 
+const isHeaderProgressFlowing = computed(() => {
+  return Boolean(statusRun.value && activeRunStatusSet.has(statusRun.value.status))
+    && !isHeaderProgressCompleted.value
+    && chapterProgressItems.value.some((item) => item.status === 'running')
+})
+
 const chapterProcessGroupsForRun = (run?: RunTrace | null): ChapterProcessGroup[] => {
   if (!run) return []
 
@@ -1329,16 +1460,34 @@ const loadMoreProcessEvents = (runId: string, group: ChapterProcessGroup) => {
   }, 80)
 }
 
-const onProcessEventListScroll = (event: Event, runId: string, group: ChapterProcessGroup) => {
-  const target = event.currentTarget as HTMLElement | null
-  if (!target) return
-  const nearBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 96
-  if (nearBottom) loadMoreProcessEvents(runId, group)
-}
-
 const processEventGroupKey = (event: AgentTraceEvent, group: ChapterProcessGroup) => {
   const phase = normalizedPhase(event.phase || (group.index ? `generate_section:${group.title}` : 'run'))
   return `phase:${phase}:kind:${processEventKind(event)}`
+}
+
+const phaseDisplayName = (phase: string) => {
+  const normalized = normalizedPhase(phase || 'run')
+  return phaseLabelMap[normalized] || normalized
+}
+
+const processEventGroupTitle = (event: AgentTraceEvent, group: ChapterProcessGroup) => {
+  const kind = processEventKind(event)
+  const phaseName = phaseDisplayName(event.phase || (group.index ? `generate_section:${group.title}` : 'run'))
+  if (kind === 'thought') return group.index ? '模型思考' : `模型思考：${phaseName}`
+  if (kind === 'tool') return toolEventTitle(event)
+  if (kind === 'error') return '异常信息'
+  if (kind === 'result') {
+    if (event.type === 'document_stitched') return '文档拼接结果'
+    if (event.type === 'format_repaired' || event.type === 'table_repaired') return '格式修复记录'
+    if (event.type === 'assistant_message') return group.index ? '模型输出' : `模型输出：${phaseName}`
+    if (event.type.includes('section')) return group.index ? '章节生成结果' : '章节生成结果'
+    return `${phaseName}结果`
+  }
+  if (event.type === 'phase_completed') return `${phaseName}完成`
+  if (event.type === 'phase_started') return `${phaseName}开始`
+  if (event.type === 'llm_request') return '模型请求记录'
+  if (event.type === 'section_started') return '章节开始'
+  return '执行进度'
 }
 
 const processEventExpansionKey = (
@@ -1374,11 +1523,8 @@ const processEntryChapterKey = (event: AgentTraceEvent) => {
   return event.title || eventSectionTitle(event) || ''
 }
 
-const shouldShowProcessEventEntry = (event: AgentTraceEvent) => {
-  const isPhaseStatus = event.type === 'phase_started'
-    || event.type === 'phase_completed'
-    || event.type === 'llm_request'
-  return !isPhaseStatus || eventHasBody(event)
+const shouldShowProcessEventEntry = (_event: AgentTraceEvent) => {
+  return true
 }
 
 const processEventDisplayEntries = (eventGroup: ProcessEventDisplayGroup) => {
@@ -1452,18 +1598,6 @@ const loadMoreProcessEntries = (
   }, 80)
 }
 
-const onProcessEntryListScroll = (
-  event: Event,
-  runId: string,
-  group: ChapterProcessGroup,
-  eventGroup: ProcessEventDisplayGroup,
-) => {
-  const target = event.currentTarget as HTMLElement | null
-  if (!target) return
-  const nearBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 96
-  if (nearBottom) loadMoreProcessEntries(runId, group, eventGroup)
-}
-
 const processEventDisplayGroups = (group: ChapterProcessGroup): ProcessEventDisplayGroup[] => {
   const groups: ProcessEventDisplayGroup[] = []
   const indexByKey = new Map<string, ProcessEventDisplayGroup>()
@@ -1475,7 +1609,7 @@ const processEventDisplayGroups = (group: ChapterProcessGroup): ProcessEventDisp
     if (!item) {
       item = {
         key,
-        title: phaseEventTitle(event),
+        title: processEventGroupTitle(event, group),
         kind: processEventKind(event),
         state: processEventState(event),
         events: [],
@@ -1484,6 +1618,7 @@ const processEventDisplayGroups = (group: ChapterProcessGroup): ProcessEventDisp
       groups.push(item)
     }
     item.events.push(event)
+    item.title = processEventGroupTitle(event, group)
     item.state = processEventState(event)
     if (item.kind !== 'error' && processEventKind(event) === 'error') item.kind = 'error'
     if (item.kind === 'status' && processEventKind(event) !== 'status') item.kind = processEventKind(event)
@@ -1556,12 +1691,6 @@ const formatTime = (iso?: string) => {
   return `${month}/${day} ${hour}:${minute}:${second}`
 }
 
-const truncateText = (value: unknown, max = 420) => {
-  if (value === undefined || value === null) return ''
-  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
-  return text.length > max ? `${text.slice(0, max)}...` : text
-}
-
 const processEventKind = (event: AgentTraceEvent): ProcessEventKind => {
   if (event.type === 'error' || event.error) return 'error'
   if (event.type === 'reasoning') return 'thought'
@@ -1594,6 +1723,68 @@ const processEventState = (event: AgentTraceEvent): ProcessExecutionState => {
   return 'running'
 }
 
+const markerOnlyEventTypes = new Set([
+  'phase_started',
+  'phase_completed',
+  'section_started',
+  'section_completed',
+  'section_saved_in_memory',
+  'llm_request',
+])
+
+const executionContentEventTypes = new Set([
+  'reasoning',
+  'assistant_message',
+  'tool_calls_planned',
+  'tool_call',
+  'tool_result',
+  'document_stitched',
+  'table_repaired',
+  'format_repaired',
+  'error',
+])
+
+const executionPayloadKeys = [
+  'error',
+  'message',
+  'result',
+  'content',
+  'arguments',
+  'sections',
+  'reason',
+  'source_files',
+  'file_names',
+  'output_path',
+  'pdf_path',
+  'section_count',
+]
+
+const hasExecutionPayload = (event: AgentTraceEvent) => {
+  const eventRecord = event as Record<string, unknown>
+  return executionPayloadKeys.some((key) => {
+    const value = eventRecord[key]
+    if (value === undefined || value === null || value === '') return false
+    if (Array.isArray(value)) return value.length > 0
+    if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+    return true
+  })
+}
+
+const processEventHasExecutionContent = (event: AgentTraceEvent) => {
+  if (markerOnlyEventTypes.has(event.type)) return false
+  if (event.error) return true
+  if (executionContentEventTypes.has(event.type) || event.type.includes('tool')) return true
+  return hasExecutionPayload(event)
+}
+
+const shouldShowProcessEventGroupStatus = (group: ProcessEventDisplayGroup) => {
+  return group.events.some(processEventHasExecutionContent)
+}
+
+const shouldShowProcessEventEntryStatus = (event: AgentTraceEvent) => {
+  return processEventHasExecutionContent(event)
+}
+
 const processExecutionStatusLabel = (state: ProcessExecutionState) => {
   if (state === 'started') return '开始执行'
   if (state === 'running') return '执行中'
@@ -1624,6 +1815,22 @@ const processEventSectionTitle = (event: AgentTraceEvent, group?: ChapterProcess
   return sectionTitle
 }
 
+const processEventContextTitle = (event: AgentTraceEvent, group?: ChapterProcessGroup) => {
+  return event.title
+    || eventSectionTitle(event)
+    || group?.title
+    || phaseDisplayName(event.phase || 'run')
+}
+
+const withEventContext = (label: string, context?: string) => {
+  return context ? `${label}：${context}` : label
+}
+
+const withEventDetail = (label: string, detail?: string, context?: string) => {
+  const title = detail ? `${label}：${detail}` : label
+  return context && context !== detail ? `${title}（${context}）` : title
+}
+
 const processEventTitle = (event: AgentTraceEvent, group?: ChapterProcessGroup) => {
   const sectionTitle = processEventSectionTitle(event, group)
   if (event.type === 'phase_started' || event.type === 'phase_completed' || event.type === 'llm_request') return phaseEventTitle(event)
@@ -1639,18 +1846,67 @@ const processEventTitle = (event: AgentTraceEvent, group?: ChapterProcessGroup) 
 }
 
 const processEventEntryTitle = (event: AgentTraceEvent, group?: ChapterProcessGroup) => {
-  if (event.type === 'phase_started' || event.type === 'phase_completed' || event.type === 'llm_request') return '阶段状态'
+  const phaseName = phaseDisplayName(event.phase || 'run')
+  const contextTitle = processEventContextTitle(event, group)
+  if (event.type === 'phase_started') return `${phaseName}开始`
+  if (event.type === 'phase_completed') return `${phaseName}完成`
+  if (event.type === 'llm_request') {
+    return withEventContext('模型请求', contextTitle)
+  }
+  if (event.type === 'reasoning') {
+    return withEventContext('模型思考', contextTitle)
+  }
+  if (event.type === 'assistant_message') {
+    return withEventContext('模型输出', contextTitle)
+  }
+  if (event.type === 'section_started') {
+    return withEventContext('章节开始', contextTitle)
+  }
+  if (event.type === 'section_completed') {
+    return withEventContext('章节完成', contextTitle)
+  }
+  if (event.type === 'section_saved_in_memory') {
+    return withEventContext('章节暂存', contextTitle)
+  }
+  if (event.type === 'tool_calls_planned') {
+    const tools = Array.isArray(event.tools) ? event.tools.filter(Boolean).join('、') : ''
+    return withEventDetail('计划工具', tools, contextTitle)
+  }
+  if (event.type === 'tool_call') {
+    return withEventDetail('工具调用', event.name, contextTitle)
+  }
+  if (event.type === 'tool_result') {
+    return withEventDetail('工具返回', event.name, contextTitle)
+  }
   return processEventTitle(event, group)
 }
 
-const processEventSummary = (group: ProcessEventDisplayGroup) => {
-  const latest = lastProcessEvent(group)
-  if (!latest) return ''
-  const body = processEventBody(latest)
-  return body ? truncateText(body, 220) : ''
+const isRequestRecordEvent = (event: AgentTraceEvent) => {
+  return event.type === 'llm_request'
+}
+
+const processRequestTurnLabel = (event: AgentTraceEvent) => {
+  return `Turn ${event.turn ?? 0}`
+}
+
+const processRequestRecordContext = (event: AgentTraceEvent, group?: ChapterProcessGroup) => {
+  const eventRecord = event as Record<string, unknown>
+  const parts: string[] = []
+  const phase = phaseDisplayName(formatEventValue(eventRecord.phase || 'run'))
+  if (phase) parts.push(phase)
+  const context = processEventContextTitle(event, group)
+  if (context && context !== phase) parts.push(context)
+  if (eventRecord.has_tools !== undefined) parts.push(`工具：${formatEventValue(eventRecord.has_tools)}`)
+  if (eventRecord.action) parts.push(formatEventValue(eventRecord.action))
+  return parts.filter(Boolean).join(' · ')
 }
 
 const processEventGroupStatusText = (group: ProcessEventDisplayGroup) => {
+  if (group.kind === 'status' && group.state === 'completed') {
+    if (group.title.includes('请求')) return '请求已返回'
+    if (group.title.includes('完成')) return '阶段已完成'
+    return '已记录'
+  }
   return processExecutionStatusLabel(group.state)
 }
 
@@ -1674,6 +1930,8 @@ const processEventEntryStatusText = (
 const processEventBodySource = (event: AgentTraceEvent) => {
   if (event.type === 'section_completed') return undefined
   const eventRecord = event as Record<string, unknown>
+  const statusSummary = processStatusEventBody(eventRecord)
+  if (statusSummary) return statusSummary
   const contentKeys = [
     'error',
     'message',
@@ -1694,6 +1952,65 @@ const processEventBodySource = (event: AgentTraceEvent) => {
     if (value !== undefined && value !== null && value !== '') return value
   }
   return undefined
+}
+
+const formatEventValue = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return ''
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (Array.isArray(value)) return value.filter(Boolean).join('、')
+  return String(value)
+}
+
+const processStatusEventDetails = (eventRecord: Record<string, unknown>): ProcessEventDetailItem[] => {
+  const items: ProcessEventDetailItem[] = []
+  const phase = phaseDisplayName(formatEventValue(eventRecord.phase || 'run'))
+  const pushDetail = (label: string, value: unknown, wide = false) => {
+    const formatted = formatEventValue(value)
+    if (formatted) items.push({ label, value: formatted, wide })
+  }
+  if (eventRecord.type === 'llm_request') {
+    pushDetail('阶段', phase)
+    if (eventRecord.turn !== undefined) pushDetail('轮次', `Turn ${eventRecord.turn}`)
+    pushDetail('可调用工具', eventRecord.has_tools)
+    pushDetail('动作', eventRecord.action, true)
+  } else if (eventRecord.type === 'phase_started') {
+    if (eventRecord.message) {
+      pushDetail('阶段', phase)
+      pushDetail('说明', eventRecord.message, true)
+    }
+  } else if (eventRecord.type === 'phase_completed') {
+    const phaseCompletedItems: ProcessEventDetailItem[] = []
+    const pushPhaseCompletedDetail = (label: string, value: unknown, wide = false) => {
+      const formatted = formatEventValue(value)
+      if (formatted) phaseCompletedItems.push({ label, value: formatted, wide })
+    }
+    const detailKeys = [
+      ['message', '说明'],
+      ['section_count', '章节数'],
+      ['retry', '重试轮次'],
+      ['issues_found', '发现问题'],
+      ['markdown_path', 'Markdown'],
+      ['pdf_path', 'PDF'],
+    ] as const
+    for (const [key, label] of detailKeys) {
+      pushPhaseCompletedDetail(label, eventRecord[key], key === 'message' || key.endsWith('_path'))
+    }
+    if (phaseCompletedItems.length) {
+      pushDetail('阶段', phase)
+      items.push(...phaseCompletedItems)
+    }
+  }
+  return items
+}
+
+const processEventDetailItems = (event: AgentTraceEvent) => {
+  return processStatusEventDetails(event as Record<string, unknown>)
+}
+
+const processStatusEventBody = (eventRecord: Record<string, unknown>) => {
+  return processStatusEventDetails(eventRecord)
+    .map((item) => `${item.label}：${item.value}`)
+    .join('\n')
 }
 
 const eventHasBody = (event: AgentTraceEvent) => {
@@ -1998,13 +2315,15 @@ onUnmounted(() => {
   line-height: 20px;
 }
 
-.doc-type-dropdown {
+.doc-type-dropdown,
+.generation-mode-dropdown {
   position: relative;
   width: 38px;
   min-width: 38px;
 }
 
-.doc-type-trigger {
+.doc-type-trigger,
+.generation-mode-trigger {
   width: 38px;
   min-width: 38px;
   padding: 0;
@@ -2019,7 +2338,8 @@ onUnmounted(() => {
   color: #64748b;
 }
 
-.doc-type-menu {
+.doc-type-menu,
+.generation-mode-menu {
   position: absolute;
   right: 0;
   bottom: calc(100% + 6px);
@@ -2032,6 +2352,10 @@ onUnmounted(() => {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
   display: grid;
   gap: 4px;
+}
+
+.generation-mode-menu {
+  min-width: 260px;
 }
 
 .prompt-input {
@@ -2072,6 +2396,7 @@ onUnmounted(() => {
 .doc-composer .composer-tool-button,
 .doc-composer .submit-button,
 .doc-composer .doc-type-trigger,
+.doc-composer .generation-mode-trigger,
 .icon-button {
   width: 38px;
   min-width: 38px;
@@ -2087,6 +2412,7 @@ onUnmounted(() => {
 .doc-composer .composer-tool-button:hover,
 .doc-composer .submit-button:hover,
 .doc-composer .doc-type-trigger:hover,
+.doc-composer .generation-mode-trigger:hover,
 .icon-button:hover {
   background: #eef6ff;
 }
@@ -2096,7 +2422,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.doc-type-control.doc-type-trigger {
+.doc-type-control.doc-type-trigger,
+.doc-type-control.generation-mode-trigger {
   padding: 0;
   border-color: transparent;
   background: transparent;
@@ -2125,6 +2452,36 @@ onUnmounted(() => {
 .doc-type-option.checked {
   background: #e8f5ff;
   color: #005f9e;
+}
+
+.generation-mode-option {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  text-align: left;
+  display: grid;
+  gap: 2px;
+}
+
+.generation-mode-option.checked {
+  background: #e8f5ff;
+  color: #005f9e;
+}
+
+.generation-mode-label {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.generation-mode-description {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .file-button {
@@ -2298,6 +2655,37 @@ onUnmounted(() => {
   background: #16a34a;
 }
 
+.header-progress-rail.progress-flowing:not(.progress-completed)::after {
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.72) 48%, transparent 74%),
+    linear-gradient(
+      90deg,
+      #16a34a 0%,
+      #16a34a calc(var(--completed-ratio, 0) * 100%),
+      #007fd4 calc(var(--completed-ratio, 0) * 100%),
+      #007fd4 calc(var(--progress-ratio, 0) * 100%),
+      transparent calc(var(--progress-ratio, 0) * 100%),
+      transparent 100%
+    );
+  background-position: -48px 0, 0 0;
+  background-size: 54px 100%, 100% 100%;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 0%,
+    #000 calc(var(--progress-ratio, 0) * 100%),
+    transparent calc(var(--progress-ratio, 0) * 100%),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    #000 0%,
+    #000 calc(var(--progress-ratio, 0) * 100%),
+    transparent calc(var(--progress-ratio, 0) * 100%),
+    transparent 100%
+  );
+  animation: header-progress-flow 1.05s linear infinite;
+}
+
 .header-progress-rail::-webkit-scrollbar {
   display: none;
 }
@@ -2347,6 +2735,33 @@ onUnmounted(() => {
 
 .header-progress-step.active .header-progress-dot {
   box-shadow: 0 0 0 5px rgba(0, 127, 212, 0.14);
+}
+
+.header-progress-step.chapter-status-running .header-progress-dot::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 2px solid rgba(0, 127, 212, 0.32);
+  border-radius: 50%;
+  animation: header-progress-dot-pulse 1.25s ease-out infinite;
+}
+
+@keyframes header-progress-flow {
+  to {
+    background-position: 54px 0, 0 0;
+  }
+}
+
+@keyframes header-progress-dot-pulse {
+  0% {
+    opacity: 0.75;
+    transform: scale(0.72);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
 }
 
 .run-state-icon {
@@ -2708,8 +3123,9 @@ onUnmounted(() => {
 .chapter-process-header h2 {
   margin: 3px 0 0;
   color: #0f172a;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.35;
+  font-weight: 900;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -2793,7 +3209,7 @@ onUnmounted(() => {
 .chapter-final-result h3 {
   margin: 3px 0 0;
   color: #164e63;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.35;
 }
 
@@ -2854,8 +3270,9 @@ onUnmounted(() => {
 .detail-feed-header h3 {
   margin: 3px 0 0;
   color: #0f172a;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.35;
+  font-weight: 850;
 }
 
 .detail-feed-header strong {
@@ -2995,6 +3412,8 @@ onUnmounted(() => {
 .process-event-title-block {
   min-width: 0;
   flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
 }
 
 .process-event-kind-label {
@@ -3022,25 +3441,6 @@ onUnmounted(() => {
   color: #dc2626;
 }
 
-.process-event-summary {
-  margin: 4px 0 0;
-  padding: 0;
-  overflow: hidden;
-  border-radius: 0;
-  background: transparent;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-}
-
 .process-event-chevron {
   width: 17px;
   height: 17px;
@@ -3048,38 +3448,25 @@ onUnmounted(() => {
 }
 
 .process-event-entry-list {
-  max-height: min(420px, 46vh);
+  width: 100%;
   margin: 4px 0 8px;
   padding: 8px 8px 8px 12px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  box-sizing: border-box;
+  overflow: visible;
   display: grid;
   gap: 8px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 127, 212, 0.35) transparent;
 }
 
 .process-event-entry-panel {
+  min-width: 0;
   border-radius: 8px;
   background: #f8fafc;
   overflow: hidden;
 }
 
-.process-event-entry-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.process-event-entry-list::-webkit-scrollbar-thumb {
-  background: rgba(0, 127, 212, 0.35);
-  border-radius: 999px;
-}
-
-.process-event-entry-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
 .process-event-entry {
-  padding: 9px 10px;
+  min-width: 0;
+  padding: 8px 10px;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -3112,10 +3499,11 @@ onUnmounted(() => {
 
 .process-event-entry-head {
   min-height: 20px;
-  padding-bottom: 6px;
+  padding-bottom: 5px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.08);
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   color: #64748b;
@@ -3124,28 +3512,140 @@ onUnmounted(() => {
 }
 
 .process-event-entry-title {
+  flex: 1 1 auto;
   min-width: 0;
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
 }
 
 .process-event-entry-title strong {
   color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.process-event-entry-title span {
-  color: #64748b;
-}
-
-.process-event-entry-head time {
+.process-event-entry-meta {
   flex: 0 0 auto;
+  margin-left: auto;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.process-event-entry-meta time {
+  font-size: 12px;
   font-weight: 700;
+}
+
+.process-event-entry-request {
+  padding: 0;
+}
+
+.process-request-record {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  align-items: start;
+}
+
+.process-request-main {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 10px;
+}
+
+.process-request-turn,
+.process-request-context {
+  min-width: 0;
+}
+
+.process-request-turn {
+  color: #334155;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.process-request-context {
+  color: #64748b;
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.process-request-time {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .process-event-entry .process-event-body {
   margin-top: 8px;
+}
+
+.process-event-detail-grid {
+  margin-top: 7px;
+  padding: 7px 9px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: #ffffff;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+}
+
+.process-event-detail-item {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.process-event-detail-item.wide {
+  flex-basis: 100%;
+}
+
+.process-event-detail-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.process-event-detail-value {
+  min-width: 0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.process-event-entry-request .process-event-detail-grid {
+  gap: 5px 12px;
 }
 
 .result-empty {
@@ -3178,7 +3678,7 @@ onUnmounted(() => {
 .process-event-meta {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   color: #64748b;
@@ -3221,22 +3721,6 @@ onUnmounted(() => {
   color: #dc2626;
 }
 
-.process-event-entry-title .process-event-entry-status.process-event-current-started {
-  color: #64748b;
-}
-
-.process-event-entry-title .process-event-entry-status.process-event-current-running {
-  color: #007fd4;
-}
-
-.process-event-entry-title .process-event-entry-status.process-event-current-completed {
-  color: #16a34a;
-}
-
-.process-event-entry-title .process-event-entry-status.process-event-current-failed {
-  color: #dc2626;
-}
-
 .process-event-loading {
   width: 15px;
   height: 15px;
@@ -3269,9 +3753,9 @@ onUnmounted(() => {
   min-width: 0;
   margin: 0;
   color: #0f172a;
-  font-size: 14px;
-  line-height: 1.45;
-  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.38;
+  font-weight: 900;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -3295,6 +3779,7 @@ onUnmounted(() => {
   color: #1e293b;
   font-family: inherit;
   font-size: 13px;
+  font-weight: 500;
 }
 
 .process-virtual-footer {
@@ -3694,6 +4179,68 @@ onUnmounted(() => {
   color: #dc2626;
 }
 
+.drawer-image-list {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: #f8fafc;
+  display: grid;
+  gap: 10px;
+}
+
+.drawer-image-list-header {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawer-image-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.drawer-image-item {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+
+.drawer-image-item:hover {
+  background: #eef6ff;
+  border-color: rgba(0, 127, 212, 0.28);
+  color: #007fd4;
+}
+
+.drawer-image-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-image-download-icon {
+  color: #64748b;
+}
+
+.drawer-image-item:hover .drawer-image-download-icon {
+  color: #007fd4;
+}
+
 .drawer-pdf-preview,
 .drawer-markdown-preview {
   flex: 1;
@@ -3730,9 +4277,22 @@ onUnmounted(() => {
   line-height: 1.35;
 }
 
+.drawer-markdown-preview :deep(h4),
+.drawer-markdown-preview :deep(h5),
+.drawer-markdown-preview :deep(h6) {
+  margin: 14px 0 8px;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .drawer-markdown-preview :deep(h1:first-child),
 .drawer-markdown-preview :deep(h2:first-child),
-.drawer-markdown-preview :deep(h3:first-child) {
+.drawer-markdown-preview :deep(h3:first-child),
+.drawer-markdown-preview :deep(h4:first-child),
+.drawer-markdown-preview :deep(h5:first-child),
+.drawer-markdown-preview :deep(h6:first-child) {
   margin-top: 0;
 }
 

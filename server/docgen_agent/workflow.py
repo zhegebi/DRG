@@ -12,7 +12,7 @@ import json
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Literal, Optional, cast
 
 from loguru import logger
 from openai.types.chat import (
@@ -41,6 +41,10 @@ MAX_TRACE_EVENTS = 1000
 MAX_READ_CONTEXT_CHARS = 60000
 MAX_SECTION_REQUIREMENT_CHARS = 5000
 MAX_SECTION_PROJECT_CONTEXT_CHARS = 14000
+
+GenerationMode = Literal["structured", "prompt_only"]
+DEFAULT_GENERATION_MODE: GenerationMode = "structured"
+_GENERATION_MODES: set[str] = {"structured", "prompt_only"}
 
 _PROJECT_CONTEXT_TOOL_NAMES = {
     "list_project_files",
@@ -98,11 +102,18 @@ def _ensure_run_state_locked(run_id: str) -> dict[str, Any]:
     return state
 
 
+def normalize_generation_mode(value: str | None) -> GenerationMode:
+    if value in _GENERATION_MODES:
+        return cast(GenerationMode, value)
+    return DEFAULT_GENERATION_MODE
+
+
 def start_generation_trace(
     run_id: str,
     doc_type: str = "",
     user_hint: str = "",
     task_title: str = "",
+    generation_mode: str = DEFAULT_GENERATION_MODE,
     *,
     reset: bool = False,
 ) -> dict[str, Any]:
@@ -116,6 +127,7 @@ def start_generation_trace(
                 "status": "running",
                 "doc_type": doc_type,
                 "task_title": task_title or doc_type or "文档生成任务",
+                "generation_mode": normalize_generation_mode(generation_mode),
                 "created_at": _now_iso(),
                 "updated_at": _now_iso(),
                 "output_path": None,
@@ -130,6 +142,7 @@ def start_generation_trace(
             state["doc_type"] = doc_type or state.get("doc_type", "")
             if task_title:
                 state["task_title"] = task_title
+            state["generation_mode"] = normalize_generation_mode(generation_mode or state.get("generation_mode"))
             state["updated_at"] = _now_iso()
 
     _record_trace(
@@ -137,6 +150,7 @@ def start_generation_trace(
         "run_started",
         phase="run",
         doc_type=doc_type,
+        generation_mode=normalize_generation_mode(generation_mode),
         user_hint=user_hint,
     )
     trace = get_generation_trace(run_id)
@@ -154,12 +168,14 @@ def get_generation_trace(run_id: str) -> dict[str, Any] | None:
             "status": state["status"],
             "doc_type": state.get("doc_type", ""),
             "task_title": state.get("task_title") or state.get("doc_type", ""),
+            "generation_mode": state.get("generation_mode", DEFAULT_GENERATION_MODE),
             "created_at": state.get("created_at"),
             "updated_at": state.get("updated_at"),
             "output_path": state.get("output_path"),
             "pdf_path": state.get("pdf_path"),
             "error": state.get("error"),
             "terminated": run_id in _TERMINATE_FLAGS or state["status"] in {"terminate_requested", "terminated"},
+            "document_content": state.get("document_content"),
             "events": [event.copy() for event in state.get("events", [])],
         }
 
@@ -523,6 +539,16 @@ SECTION_SYSTEM_PROMPT = """\
 4. 内容格式按 schema 的 content_format_rules 执行，视觉布局按 output_layout.json 摘录执行。
 5. 内容必须详实、专业，并结合项目真实需求或代码信息展开；缺失项按文档类型标注“待确认”或“待补充”，不要编造。
 6. 严禁输出任何客套话或 AI 声明，直接输出文档正文。
+"""
+
+DIRECT_PROMPT_ONLY_SYSTEM_PROMPT = """\
+你是一个专业的软件工程文档撰写专家。
+
+本次生成模式为“仅按提示词撰写”：
+1. 只依据用户提示词和用户上传文件内容写作。
+2. 不使用系统默认需求、预置文档结构、output_schema.json 或 output_layout.json 作为内容约束。
+3. 用户提示词是唯一写作目标；不要主动补全用户未要求的完整模板章节。
+4. 输出 Markdown 正文，建议包含一个一级标题；不要输出客套话或 AI 声明。
 """
 
 STITCH_SYSTEM_PROMPT = """\
@@ -947,6 +973,148 @@ def _section_contains(sub_sec: dict, group: dict) -> bool:
     return False
 
 
+def _trace_tool_result(run_id: Optional[str], phase: str, name: str, arguments: dict[str, Any]) -> str:
+    _record_trace(run_id, "tool_call", phase=phase, name=name, arguments=arguments, direct=True)
+    result = execute_tool(name, arguments)
+    _record_trace(run_id, "tool_result", phase=phase, name=name, result=result, direct=True)
+    return result
+
+
+def _read_direct_generation_context(
+    source_paths: list[str],
+    generation_mode: GenerationMode,
+    run_id: Optional[str],
+) -> str:
+    """读取自由撰写模式所需的用户输入和可选规范。"""
+    _record_trace(
+        run_id,
+        "phase_started",
+        phase="read_files",
+        message="读取用户上传内容和可选规范",
+        generation_mode=generation_mode,
+    )
+
+    source_content = _trace_tool_result(run_id, "read_files", "read_requirement", {}) if source_paths else ""
+
+    _record_trace(
+        run_id,
+        "phase_completed",
+        phase="read_files",
+        message="自由撰写上下文读取完成",
+        has_source_files=bool(source_paths),
+    )
+    return source_content
+
+
+def _generate_direct_document(
+    doc_type: str,
+    user_hint: str,
+    source_content: str,
+    generation_mode: GenerationMode,
+    run_id: Optional[str],
+) -> str:
+    if not user_hint.strip() and not source_content.strip():
+        raise ValueError("自由撰写模式需要填写提示词，或上传至少一个需求/依赖文件")
+
+    _record_trace(
+        run_id,
+        "phase_started",
+        phase="generate_document",
+        message="按用户提示直接撰写文档",
+        generation_mode=generation_mode,
+    )
+
+    system_prompt = DIRECT_PROMPT_ONLY_SYSTEM_PROMPT
+    tools = None
+
+    user_prompt = "\n\n".join(
+        part
+        for part in [
+            f"文档类型参考：{doc_type}",
+            f"用户提示词（最高优先级）：\n{user_hint.strip() or '（无）'}",
+            f"用户上传文件内容：\n{source_content}" if source_content.strip() else "",
+        ]
+        if part
+    )
+    content = _call_llm(system_prompt, user_prompt, tools=tools, run_id=run_id, phase="generate_document")
+    if not content or len(content.strip()) < 20:
+        _record_trace(run_id, "section_retry", phase="generate_document", message="直接撰写内容过短，重试")
+        content = _call_llm(system_prompt, user_prompt, tools=tools, run_id=run_id, phase="generate_document")
+
+    _record_trace(run_id, "phase_completed", phase="generate_document", content=content)
+    return content
+
+
+def _ensure_markdown_title(md_text: str, fallback_title: str) -> str:
+    if md_text.lstrip().startswith("# "):
+        return md_text
+    return f"# {fallback_title}\n\n{md_text.strip()}\n"
+
+
+def _save_and_convert_document(
+    final_doc: str,
+    doc_type: str,
+    user_hint: str,
+    run_id: Optional[str],
+    *,
+    enforce_doc_type_header: bool = True,
+    file_name_suffix: str = "",
+) -> Path:
+    _check_terminated(run_id, "save")
+    logger.info("=" * 50)
+    logger.info("Phase 5: 保存 Markdown")
+    _record_trace(run_id, "phase_started", phase="save")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = f"{doc_type}{file_name_suffix}_{ts}.md"
+    if enforce_doc_type_header:
+        final_doc = normalize_document_header(final_doc, doc_type, user_hint)
+    else:
+        final_doc = _ensure_markdown_title(final_doc, doc_type or "文档生成结果")
+    final_doc = normalize_heading_numbering(final_doc)
+    final_doc = _fix_unordered_lists_in_md(final_doc)
+    final_doc = normalize_inline_section_titles(final_doc)
+    final_doc, caption_issues = normalize_caption_positions_and_numbering(final_doc)
+    final_doc, table_issues = _validate_table_captions(final_doc)
+    final_doc, caption_issues_after_table_repair = normalize_caption_positions_and_numbering(final_doc)
+    for issue in [*caption_issues, *table_issues, *caption_issues_after_table_repair]:
+        logger.warning(f"  格式修复: {issue}")
+        _record_trace(run_id, "format_repaired", phase="save", message=issue)
+    md_output_path = Path(execute_tool(
+        "save_document",
+        {
+            "file_name": file_name,
+            "content": final_doc,
+            "doc_type": doc_type if enforce_doc_type_header else "",
+            "metadata_source": user_hint,
+        },
+    ))
+    logger.info(f"Markdown 已保存至: {md_output_path}")
+    _record_trace(run_id, "phase_completed", phase="save", markdown_path=str(md_output_path))
+
+    _check_terminated(run_id, "convert_pdf")
+    logger.info("=" * 50)
+    logger.info("Phase 6: 转 PDF")
+    _record_trace(run_id, "phase_started", phase="convert_pdf", markdown_path=str(md_output_path))
+    pdf_output_path = Path(execute_tool("convert_to_pdf", {"md_path": str(md_output_path)}))
+    logger.info(f"PDF 已保存至: {pdf_output_path}")
+    _record_trace(
+        run_id,
+        "phase_completed",
+        phase="convert_pdf",
+        markdown_path=str(md_output_path),
+        pdf_path=str(pdf_output_path),
+    )
+    _set_run_status(
+        run_id,
+        "completed",
+        output_path=str(md_output_path),
+        pdf_path=str(pdf_output_path),
+        error=None,
+        document_content=final_doc,
+    )
+    return md_output_path
+
+
 # ============================================================
 # 主入口
 # ============================================================
@@ -956,6 +1124,7 @@ def run_agent(
     source_file: Optional[str] = None,
     source_files: Optional[list[str]] = None,
     run_id: Optional[str] = None,
+    generation_mode: str = DEFAULT_GENERATION_MODE,
 ) -> Path:
     """完整的文档生成流程。
 
@@ -965,9 +1134,11 @@ def run_agent(
         source_file: 前端上传的单个需求文件路径（兼容旧接口）
         source_files: 前端上传的需求/依赖文件路径列表，默认用 agent_input/requirement.md
         run_id: 可选任务 ID，用于读取 trace 或请求终止
+        generation_mode: structured=提示词+文件+预定义 output 规范；prompt_only=仅提示词+文件
     """
+    normalized_mode = normalize_generation_mode(generation_mode)
     if run_id and get_generation_trace(run_id) is None:
-        start_generation_trace(run_id, doc_type=doc_type, user_hint=user_hint)
+        start_generation_trace(run_id, doc_type=doc_type, user_hint=user_hint, generation_mode=normalized_mode)
 
     try:
         _check_terminated(run_id, "run")
@@ -977,11 +1148,35 @@ def run_agent(
             run_id,
             "source_files_set",
             phase="run",
-            source_files=resolved_source_files or ["agent_input/requirement.md"],
+            source_files=resolved_source_files or ([] if normalized_mode != "structured" else ["agent_input/requirement.md"]),
+            generation_mode=normalized_mode,
         )
 
         logger.info(f"文档类型: {doc_type}")
+        logger.info(f"生成模式: {normalized_mode}")
         logger.info(f"输出目录: {OUTPUT_DIR}")
+
+        if normalized_mode != "structured":
+            source_content = _read_direct_generation_context(
+                resolved_source_files,
+                normalized_mode,
+                run_id,
+            )
+            final_doc = _generate_direct_document(
+                doc_type,
+                user_hint,
+                source_content,
+                normalized_mode,
+                run_id,
+            )
+            return _save_and_convert_document(
+                final_doc,
+                doc_type,
+                user_hint,
+                run_id,
+                enforce_doc_type_header=False,
+                file_name_suffix="_自定义",
+            )
 
         # ── Phase 1: 读取文件 ──
         logger.info("=" * 50)
@@ -1107,57 +1302,7 @@ def run_agent(
             deterministic=True,
         )
 
-        # ── Phase 5: 保存 Markdown ──
-        _check_terminated(run_id, "save")
-        logger.info("=" * 50)
-        logger.info("Phase 5: 保存 Markdown")
-        _record_trace(run_id, "phase_started", phase="save")
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"{doc_type}_{ts}.md"
-        final_doc = normalize_heading_numbering(final_doc)
-        final_doc = _fix_unordered_lists_in_md(final_doc)
-        final_doc = normalize_inline_section_titles(final_doc)
-        final_doc, caption_issues = normalize_caption_positions_and_numbering(final_doc)
-        final_doc, table_issues = _validate_table_captions(final_doc)
-        final_doc, caption_issues_after_table_repair = normalize_caption_positions_and_numbering(final_doc)
-        for issue in [*caption_issues, *table_issues, *caption_issues_after_table_repair]:
-            logger.warning(f"  格式修复: {issue}")
-            _record_trace(run_id, "format_repaired", phase="save", message=issue)
-        md_output_path = Path(execute_tool(
-            "save_document",
-            {
-                "file_name": file_name,
-                "content": final_doc,
-                "doc_type": doc_type,
-                "metadata_source": user_hint,
-            },
-        ))
-        logger.info(f"Markdown 已保存至: {md_output_path}")
-        _record_trace(run_id, "phase_completed", phase="save", markdown_path=str(md_output_path))
-
-        # ── Phase 6: 转 PDF ──
-        _check_terminated(run_id, "convert_pdf")
-        logger.info("=" * 50)
-        logger.info("Phase 6: 转 PDF")
-        _record_trace(run_id, "phase_started", phase="convert_pdf", markdown_path=str(md_output_path))
-        pdf_output_path = Path(execute_tool("convert_to_pdf", {"md_path": str(md_output_path)}))
-        logger.info(f"PDF 已保存至: {pdf_output_path}")
-        _record_trace(
-            run_id,
-            "phase_completed",
-            phase="convert_pdf",
-            markdown_path=str(md_output_path),
-            pdf_path=str(pdf_output_path),
-        )
-        _set_run_status(
-            run_id,
-            "completed",
-            output_path=str(md_output_path),
-            pdf_path=str(pdf_output_path),
-            error=None,
-        )
-
-        return md_output_path
+        return _save_and_convert_document(final_doc, doc_type, user_hint, run_id)
     except GenerationTerminated:
         logger.info(f"文档生成被终止: {run_id}")
         _set_run_status(run_id, "terminated")

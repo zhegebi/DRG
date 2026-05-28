@@ -466,14 +466,6 @@ def _handle_save_document(arguments: dict) -> str:
     metadata_source = str(arguments.get("metadata_source", ""))
     if doc_type:
         content = normalize_document_header(content, doc_type, metadata_source)
-    content = normalize_heading_numbering(content)
-    content = _fix_unordered_lists_in_md(content)
-    content = normalize_inline_section_titles(content)
-    content, caption_issues = normalize_caption_positions_and_numbering(content)
-    content, table_issues = _validate_table_captions(content)
-    content, caption_issues_after_table_repair = normalize_caption_positions_and_numbering(content)
-    for issue in [*caption_issues, *table_issues, *caption_issues_after_table_repair]:
-        logger.warning(f"   save_document 格式修复: {issue}")
     output_path = OUTPUT_DIR / file_name
     output_path.write_text(content, encoding="utf-8")
     logger.info(f"   save_document → {output_path}")
@@ -1267,12 +1259,13 @@ def _layout_css() -> str:
         heading_css_parts.append(f"""\
 {tag} {{
     font-family: "{tff}", "{tf}", sans-serif;
-    font-size: {fs};
-    font-weight: {bold};
+    font-size: {fs} !important;
+    font-weight: {bold} !important;
     text-align: {align};
     margin-top: {sb};
     margin-bottom: {sa};
     text-indent: {ti};
+    line-height: 1.25;
 }}""")
 
     heading_css = "\n\n".join(heading_css_parts)
@@ -2570,12 +2563,6 @@ def convert_to_pdf(md_path: str) -> str:
     _doc_info = _extract_doc_info(md_text)
     # 在 MD 层面移除所有文档封面信息行，标题页由 _format_title_html 统一生成。
     md_text = _remove_document_metadata_lines(md_text)
-    md_text = normalize_heading_numbering(md_text)
-    md_text = _fix_unordered_lists_in_md(md_text)
-    md_text = normalize_inline_section_titles(md_text)
-    md_text, _caption_issues = normalize_caption_positions_and_numbering(md_text)
-    md_text, _table_issues = _validate_table_captions(md_text)
-    md_text, _caption_issues_after_table_repair = normalize_caption_positions_and_numbering(md_text)
     md_text = _render_diagram_blocks_for_html(md_text)
 
     # ── 步骤2: MD → HTML（先转义 UML 原型符号 <<...>>，防止被当作 HTML 标签）──

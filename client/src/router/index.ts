@@ -9,6 +9,10 @@ const routes: Array<RouteRecordRaw> = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/home',
+    redirect: '/',
+  },
+  {
     path: '/DocGen',
     name: 'docgen',
     component: () => import('../views/DocGen/DocGen.vue'),
@@ -31,6 +35,10 @@ const routes: Array<RouteRecordRaw> = [
     name: 'auth',
     component: () => import('../views/Auth/AuthPage.vue'),
     meta: { requiresGuest: true }
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
   }
 ]
 

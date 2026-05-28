@@ -2,6 +2,7 @@ import { listDocTypesApiDocgenAgentDocTypesGet } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 export type DocType = '需求规格说明书' | '架构设计文档' | '测试文档'
+export type GenerationMode = 'structured' | 'prompt_only'
 
 export type RunStatus =
   | 'running'
@@ -37,6 +38,7 @@ export interface RunTrace {
   status: RunStatus | string
   doc_type: string
   task_title: string
+  generation_mode?: GenerationMode | string
   created_at: string
   updated_at: string
   output_path: string | null
@@ -51,6 +53,7 @@ export interface StartGenerationResponse {
   task_id: string
   doc_type: string
   task_title: string
+  generation_mode: GenerationMode | string
 }
 
 interface DocgenTaskTraceResponse {
@@ -59,6 +62,7 @@ interface DocgenTaskTraceResponse {
   status: string
   doc_type?: string
   task_title?: string
+  generation_mode?: GenerationMode | string
   created_at?: string | null
   updated_at?: string | null
   output_path?: string | null
@@ -82,6 +86,7 @@ const normalizeTrace = (trace: DocgenTaskTraceResponse): RunTrace => ({
   status: trace.status,
   doc_type: trace.doc_type || '',
   task_title: trace.task_title || trace.doc_type || '',
+  generation_mode: trace.generation_mode || 'structured',
   created_at: trace.created_at || '',
   updated_at: trace.updated_at || '',
   output_path: trace.output_path ?? null,
@@ -147,10 +152,12 @@ export const startGeneration = async (
   prompt: string,
   docType: DocType,
   sourceFiles?: SourceFileInput,
+  generationMode: GenerationMode = 'structured',
 ): Promise<StartGenerationResponse> => {
   const form = new FormData()
   form.append('prompt', prompt)
   form.append('doc_type', docType)
+  form.append('generation_mode', generationMode)
   appendSourceFiles(form, sourceFiles)
   return await multipartPost<StartGenerationResponse>(`${DOCGEN_BASE}/task/create`, form)
 }
@@ -257,9 +264,26 @@ export const downloadPdf = async (runId: string, fileName: string) => {
   await downloadRunFile(runId, 'pdf', fileName)
 }
 
+export const downloadDocImage = async (imagePath: string) => {
+  const url = `${DOCGEN_BASE}/documents/${encodeURIComponent(imagePath)}/download`
+  const resp = await fetch(url, { headers: authHeaders() })
+  if (!resp.ok) throw new Error(`下载图片失败：HTTP ${resp.status}`)
+
+  const blob = await resp.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = imagePath.split('/').pop() || 'image.png'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
 export const phaseLabelMap: Record<string, string> = {
   run: '总控',
   read_files: '读取文件',
+  generate_document: '直接撰写',
   split_sections: '拆解章节',
   generate_sections: '逐节生成',
   validate: 'Schema 合规校验',

@@ -100,7 +100,7 @@ uv run python -m server.docgen_agent.workflow
 uv run python -c "from server.docgen_agent.workflow import run_agent; run_agent(doc_type='架构设计文档')"
 
 # 将已有 Markdown 转换为 PDF
-uv run python -c "from server.docgen_agent.tools import convert_to_pdf; convert_to_pdf(r'server/docgen_agent/output_docs/需求规格说明书_20260520_134220.md')"
+uv run python -c "from server.docgen_agent.tools import convert_to_pdf; convert_to_pdf(r'server/docgen_agent/output_docs/架构设计文档_20260525_182515.md')"
 
 # 首次使用需安装 Playwright 浏览器
 uv run python -m playwright install chromium

@@ -38,6 +38,7 @@
 |---|---|---|---|
 | `prompt` | string | 否 | 用户初始提示词 |
 | `doc_type` | string | 否 | 文档类型，默认 `需求规格说明书` |
+| `generation_mode` | string | 否 | 生成模式，默认 `structured`；可选 `structured`（提示词+文件+预定义 output 规范）、`prompt_only`（提示词+文件） |
 | `source_file` | file | 否 | 单个需求文件，兼容旧字段，仅支持 `.txt` / `.md` |
 | `source_files` | file[] | 否 | 需求/依赖文件列表，仅支持 `.txt` / `.md`，可重复传入 |
 | `task_id` | string | 否 | 自定义任务 ID；不传则后端生成 |
@@ -49,7 +50,8 @@
   "status": "started",
   "task_id": "a1b2c3",
   "doc_type": "测试文档",
-  "task_title": "测试文档"
+  "task_title": "测试文档",
+  "generation_mode": "structured"
 }
 ```
 
@@ -90,6 +92,7 @@
   "status": "running",
   "doc_type": "架构设计文档",
   "task_title": "架构文档",
+  "generation_mode": "structured",
   "document_id": null,
   "created_at": "2026-05-18T12:00:00",
   "updated_at": "2026-05-18T12:05:00",

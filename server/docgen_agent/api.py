@@ -19,7 +19,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 import server.db
 from server.db.utils import get_async_session
-from server.knowledge_base.table import Document
+from server.knowledge_base.table import Category, Document
 from server.user.auth import get_current_user
 from server.user.table import User
 
@@ -27,7 +27,10 @@ from .table import DocgenTask
 from .tools import OUTPUT_DIR, client
 from .workflow import (
     GenerationTerminated,
+    DEFAULT_GENERATION_MODE,
+    GenerationMode,
     get_generation_trace,
+    normalize_generation_mode,
     request_generation_terminate,
     run_agent,
     start_generation_trace,
@@ -49,6 +52,7 @@ class StartDocgenTaskResponse(BaseModel):
     task_id: str
     doc_type: str
     task_title: str = ""
+    generation_mode: str = DEFAULT_GENERATION_MODE
 
 
 class DocgenTaskStatusResponse(BaseModel):
@@ -61,6 +65,7 @@ class DocgenTaskTraceResponse(BaseModel):
     status: str
     doc_type: str = ""
     task_title: str = ""
+    generation_mode: str = DEFAULT_GENERATION_MODE
     document_id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -87,6 +92,7 @@ def _normalize_trace_payload(
     if row is not None:
         payload.setdefault("doc_type", row.doc_type)
         payload.setdefault("task_title", row.name)
+        payload.setdefault("generation_mode", DEFAULT_GENERATION_MODE)
         payload.setdefault("document_id", row.document_id)
         payload.setdefault("created_at", row.created_at.isoformat(timespec="seconds"))
         payload.setdefault("updated_at", row.updated_at.isoformat(timespec="seconds"))
@@ -97,6 +103,7 @@ def _normalize_trace_payload(
         if not payload.get("error"):
             payload["error"] = row.error
     payload["terminated"] = payload.get("status") in {"terminate_requested", "terminated"}
+    payload["generation_mode"] = normalize_generation_mode(str(payload.get("generation_mode") or DEFAULT_GENERATION_MODE))
     payload.setdefault("events", [])
     return payload
 
@@ -109,6 +116,7 @@ def _trace_payload_from_db(row: DocgenTask) -> dict[str, Any]:
             "status": row.status,
             "doc_type": row.doc_type,
             "task_title": row.name,
+            "generation_mode": trace.get("generation_mode", DEFAULT_GENERATION_MODE),
             "document_id": row.document_id,
             "created_at": row.created_at.isoformat(timespec="seconds"),
             "updated_at": row.updated_at.isoformat(timespec="seconds"),
@@ -168,7 +176,13 @@ def _generated_markdown_path(path_text: Optional[str]) -> Optional[Path]:
     return path
 
 
-def _generated_document_payload(row: DocgenTask) -> Optional[tuple[str, str, str]]:
+def _generated_document_payload(row: DocgenTask) -> Optional[tuple[str, str, Category]]:
+    title = (row.name or row.doc_type or row.task_id).strip()
+    category = _doc_type_to_category(row.doc_type)
+    trace = row.trace if isinstance(row.trace, dict) else {}
+    content = trace.get("document_content")
+    if isinstance(content, str) and content.strip():
+        return title, content.strip(), category
     path = _generated_markdown_path(row.output_path)
     if path is None:
         return None
@@ -176,8 +190,6 @@ def _generated_document_payload(row: DocgenTask) -> Optional[tuple[str, str, str
     if not content.strip():
         logger.warning(f"Skip storing empty generated markdown: {path}")
         return None
-    title = (row.name or row.doc_type or path.stem or row.task_id).strip()
-    category = (row.doc_type or "DocGen").strip()
     return title, content, category
 
 
@@ -321,6 +333,15 @@ def _generate_task_title(doc_type: str, prompt: str, source_paths: list[str]) ->
         return fallback
 
 
+def _doc_type_to_category(doc_type: str) -> Category:
+    mapping = {
+        "需求规格说明书": Category.REQUIREMENT,
+        "架构设计文档": Category.ARC,
+        "测试文档": Category.TEST_CASE_DOC,
+    }
+    return mapping.get(doc_type, Category.ANY)
+
+
 def _safe_output_path(path_text: str) -> Path:
     path = Path(path_text)
     if not path.is_absolute():
@@ -365,13 +386,20 @@ def _save_uploaded_source_files(
     return saved
 
 
-def _run_agent_background(task_id: str, doc_type: DocType, prompt: str, source_paths: list[str]) -> None:
+def _run_agent_background(
+    task_id: str,
+    doc_type: DocType,
+    prompt: str,
+    source_paths: list[str],
+    generation_mode: GenerationMode = DEFAULT_GENERATION_MODE,
+) -> None:
     try:
         run_agent(
             doc_type=doc_type,
             user_hint=prompt,
             source_files=source_paths,
             run_id=task_id,
+            generation_mode=generation_mode,
         )
     except GenerationTerminated:
         logger.info(f"后台文档生成已终止: {task_id}")
@@ -386,6 +414,7 @@ async def create_task(
     background_tasks: BackgroundTasks,
     prompt: str = Form(default="", description="前端用户的提示词"),
     doc_type: DocType = Form(default="需求规格说明书", description="目标文档类型"),
+    generation_mode: GenerationMode = Form(default=DEFAULT_GENERATION_MODE, description="生成模式"),
     source_file: Optional[UploadFile] = File(default=None, description="需求文件（txt/md），兼容旧字段"),
     source_files: Optional[list[UploadFile]] = File(default=None, description="需求/依赖文件列表（txt/md）"),
     task_id: Optional[str] = Form(default=None, description="任务 ID；不传则后端生成"),
@@ -397,7 +426,15 @@ async def create_task(
     task_id = task_id or uuid.uuid4().hex
     task_title = _generate_task_title(doc_type, prompt, source_paths)
     assert current_user.id is not None, "current_user.id is None"
-    initial_trace = start_generation_trace(task_id, doc_type=doc_type, user_hint=prompt, task_title=task_title, reset=True)
+    generation_mode = normalize_generation_mode(generation_mode)
+    initial_trace = start_generation_trace(
+        task_id,
+        doc_type=doc_type,
+        user_hint=prompt,
+        task_title=task_title,
+        generation_mode=generation_mode,
+        reset=True,
+    )
     await _create_docgen_task_record(
         db_client,
         task_id=task_id,
@@ -408,8 +445,14 @@ async def create_task(
         task_title=task_title,
         initial_trace=initial_trace,
     )
-    background_tasks.add_task(_run_agent_background, task_id, doc_type, prompt, source_paths)
-    return StartDocgenTaskResponse(status="started", task_id=task_id, doc_type=doc_type, task_title=task_title)
+    background_tasks.add_task(_run_agent_background, task_id, doc_type, prompt, source_paths, generation_mode)
+    return StartDocgenTaskResponse(
+        status="started",
+        task_id=task_id,
+        doc_type=doc_type,
+        task_title=task_title,
+        generation_mode=generation_mode,
+    )
 
 
 @router.get("/task/list", response_model=list[DocgenTaskTraceResponse])
@@ -598,10 +641,10 @@ async def delete_task(
     return True
 
 
-@router.get("/documents/{file_name}/download")
+@router.get("/documents/{file_name:path}/download")
 async def download_document(file_name: str) -> FileResponse:
-    """按文件名下载 output_docs 目录中的文档。"""
-    path = _safe_output_path(str(OUTPUT_DIR / Path(file_name).name))
+    """按文件名下载 output_docs 目录中的文档或图片。支持子目录路径，如 diagrams/xxx.png。"""
+    path = _safe_output_path(str(OUTPUT_DIR / file_name))
     return FileResponse(
         path,
         filename=path.name,
