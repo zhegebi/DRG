@@ -6,7 +6,7 @@ from sqlmodel import Field, SQLModel, text
 
 
 class Category(str, Enum):
-    """Enumeration for document categories."""
+    """Enumeration for document categories used by DRG/DocGen agents."""
 
     TEST_CASE = "test_case"
     DRG_GROUP = "drg_group"
@@ -24,7 +24,10 @@ class Document(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(..., description="The title of the document")
     content: str = Field(..., description="The content of the document")
-    category: Category = Field(default=Category.ANY, description="The category of the document")
+    category: str = Field(
+        default=Category.ANY.value,
+        description="The category of the document",
+    )
     created_at: Optional[datetime.datetime] = Field(
         default_factory=datetime.datetime.now,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},

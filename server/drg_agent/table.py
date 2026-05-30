@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import JSON, Column, Field, SQLModel
 
 __all__ = ["DrgTask"]
@@ -28,7 +29,9 @@ class DrgTask(SQLModel, table=True):
     result: Optional[dict] = Field(
         default=None, sa_column=Column(JSON)
     )  # the format is DrgResult or DrgResultWithTestCase in models.py
-    status: TaskStatus
+    status: TaskStatus = Field(
+        sa_column=Column(SAEnum(TaskStatus, values_callable=lambda x: [e.value for e in x]))
+    )
     should_generate_test: bool
     err_msg: Optional[str] = None
     created_at: datetime

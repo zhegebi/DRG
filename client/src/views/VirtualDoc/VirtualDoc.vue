@@ -173,6 +173,18 @@ const categoryLabels: Record<string, string> = {
   report: '报告文档',
   regulation: '法规文档',
   education: '培训文档',
+  // 支持 Chinese labels already in DB
+  '技术文档': '技术文档',
+  '医学知识': '医学知识',
+  '测试文档': '测试文档',
+  '运营文档': '运营文档',
+  // DRG/DocGen 生成的分类
+  test_case: '测试用例',
+  drg_group: 'DRG分组',
+  requirement: '需求规格',
+  ARCH: '架构文档',
+  test_case_doc: '测试文档',
+  any: '通用',
 }
 
 function catLabel(cat: string | null | undefined): string {

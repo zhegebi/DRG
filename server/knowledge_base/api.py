@@ -7,7 +7,7 @@ from server.db.utils import get_async_session
 from server.user.auth import get_current_user
 from server.user.table import User
 
-from .table import Category, Document
+from .table import Document
 
 router = APIRouter(prefix="/api/doc")
 
@@ -36,10 +36,18 @@ async def list_docs(
 @router.get("/categories")
 async def list_categories(
     current_user: User = Depends(get_current_user),
-) -> list[Category]:
-    """List all distinct document categories."""
+    db_client: AsyncSession = Depends(get_async_session),
+) -> list[str]:
+    """List all distinct document categories from the database."""
     try:
-        return list(Category)
+        from sqlmodel import distinct
+
+        query = select(distinct(Document.category)).where(
+            Document.category != None  # noqa: E711
+        )
+        result = await db_client.exec(query)
+        cats = result.all()
+        return [c for c in cats if c is not None]
     except Exception as e:
         logger.exception(f"Error listing categories: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
