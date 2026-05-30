@@ -25,26 +25,10 @@
           <span class="template-arrow">→</span>
         </div>
         <div class="template-card">
-          <div class="template-icon">🧬</div>
-          <div class="template-info">
-            <h3>肿瘤疾病</h3>
-            <p>MDCM · 恶性肿瘤、化疗等</p>
-          </div>
-          <span class="template-arrow">→</span>
-        </div>
-        <div class="template-card">
           <div class="template-icon">🦴</div>
           <div class="template-info">
             <h3>骨骼肌肉系统</h3>
             <p>MDCI · 骨折、关节置换等</p>
-          </div>
-          <span class="template-arrow">→</span>
-        </div>
-        <div class="template-card">
-          <div class="template-icon">🧠</div>
-          <div class="template-info">
-            <h3>神经系统疾病</h3>
-            <p>MDCA · 脑卒中、帕金森等</p>
           </div>
           <span class="template-arrow">→</span>
         </div>

@@ -6,13 +6,12 @@
       <Section3Tutorial :observer="observeSection" />
       <Section4Templates :observer="observeSection" />
       <Section5FileBank :observer="observeSection" />
-      <Section6Deploy :observer="observeSection" />
       <Section7CTA :observer="observeSection" />
     </div>
 
     <div class="scroll-progress">
       <div
-        v-for="(_, index) in 7"
+        v-for="(_, index) in 6"
         :key="index"
         class="progress-dot"
         :class="{ active: currentSection === index }"
@@ -31,12 +30,11 @@ import Section2Features from './Section2Features.vue'
 import Section3Tutorial from './Section3Tutorial.vue'
 import Section4Templates from './Section4Templates.vue'
 import Section5FileBank from './Section5FileBank.vue'
-import Section6Deploy from './Section6Deploy.vue'
 import Section7CTA from './Section7CTA.vue'
 
 const containerRef = ref<HTMLElement>()
 const currentSection = ref(0)
-const totalSections = 7
+const totalSections = 6
 
 // 滚动到指定区块
 const scrollToSection = (index: number) => {

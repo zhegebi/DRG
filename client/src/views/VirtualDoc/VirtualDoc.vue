@@ -25,7 +25,7 @@
           @click="selectCategory(cat)"
         >
           <SvgIcon type="mdi" :path="mdiFolderOutline" class="category-icon" />
-          <span class="category-name">{{ cat }}</span>
+          <span class="category-name">{{ catLabel(cat) }}</span>
           <span class="category-count">{{ countByCategory[cat] ?? 0 }}</span>
         </button>
 
@@ -40,7 +40,7 @@
       <!-- 头部 -->
       <header class="doc-header">
         <div class="doc-header-left">
-          <h1 class="doc-title">{{ selectedCategory || '全部文档' }}</h1>
+          <h1 class="doc-title">{{ selectedCategory ? catLabel(selectedCategory) : '全部文档' }}</h1>
           <span class="doc-count">{{ filteredDocs.length }} 条记录</span>
         </div>
         <div class="doc-header-right">
@@ -99,7 +99,7 @@
                 <span class="doc-title-text">{{ doc.title }}</span>
               </td>
               <td class="col-category">
-                <span class="category-badge">{{ doc.category || '未分类' }}</span>
+                <span class="category-badge">{{ catLabel(doc.category) }}</span>
               </td>
               <td class="col-time">{{ formatTime(doc.created_at) }}</td>
             </tr>
@@ -126,7 +126,7 @@
                 </span>
                 <span class="drawer-meta-item">
                   <SvgIcon type="mdi" :path="mdiFolderOutline" class="drawer-meta-icon" />
-                  {{ detailDoc.category || '未分类' }}
+                  {{ catLabel(detailDoc.category) }}
                 </span>
                 <span class="drawer-meta-item">
                   <SvgIcon type="mdi" :path="mdiCalendarOutline" class="drawer-meta-icon" />
@@ -163,6 +163,22 @@ import {
 import { listDocsApiDocListPost, getDocApiDocIdGet, listCategoriesApiDocCategoriesGet } from '@/api/sdk.gen'
 import type { Document } from '@/api/types.gen'
 import { marked } from 'marked'
+
+// 分类标签汉化映射
+const categoryLabels: Record<string, string> = {
+  tech: '技术文档',
+  medical: '医学知识',
+  test: '测试文档',
+  operation: '运营文档',
+  report: '报告文档',
+  regulation: '法规文档',
+  education: '培训文档',
+}
+
+function catLabel(cat: string | null | undefined): string {
+  if (!cat) return '未分类'
+  return categoryLabels[cat] || cat
+}
 
 // 状态
 const docs = ref<Document[]>([])

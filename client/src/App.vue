@@ -1,10 +1,31 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import ControlBar from './ControlBar.vue';
+import { client } from '@/api/client.gen';
+import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
+const router = useRouter();
 const showControlBar = computed(() => route.name !== 'auth');
+
+onMounted(() => {
+  // 全局拦截 401：access_token 过期时自动登出
+  client.instance.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error?.response?.status === 401) {
+        const auth = useAuthStore();
+        const wasLoggedIn = auth.isAuthenticated;
+        auth.clearAuth();
+        if (wasLoggedIn && route.name !== 'auth') {
+          router.push('/auth');
+        }
+      }
+      return Promise.reject(error);
+    }
+  );
+});
 </script>
 <template>
     <div class="app-container">
