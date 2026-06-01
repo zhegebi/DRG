@@ -218,9 +218,7 @@
     "inline_code_padding": "1px 3px",
     "list_margin": "0.5em 0",
     "horizontal_rule_border": "1px solid #ccc",
-    "horizontal_rule_margin": "1.5em 0",
-    "pdf_header_template": "<span style=\"font-size:1pt;color:transparent;\">&nbsp;</span>",
-    "pdf_footer_template": "<div style=\"font-size:9pt;text-align:center;width:100%;margin:0;padding:0;\">第 <span class=\"pageNumber\"></span> 页</div>"
+    "horizontal_rule_margin": "1.5em 0"
   },
 
   "rendering_conventions": {

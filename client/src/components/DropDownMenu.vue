@@ -11,14 +11,14 @@
         <span class="trigger-title">{{ title }}</span>
       </span>
       <span class="trigger-actions">
-        <SvgIcon
-          v-if="statusIcon"
-          type="mdi"
-          :path="statusIcon"
-          class="trigger-status-icon"
-          :class="statusClass"
-          :title="statusTitle"
-        />
+        <AppTooltip v-if="statusIcon" :text="statusTitle">
+          <SvgIcon
+            type="mdi"
+            :path="statusIcon"
+            class="trigger-status-icon"
+            :class="statusClass"
+          />
+        </AppTooltip>
         <span class="trigger-arrow" aria-hidden="true"></span>
       </span>
     </button>
@@ -40,6 +40,7 @@
 <script lang="ts" setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
+import AppTooltip from '@/components/AppTooltip.vue'
 import {
   mdiAlertCircleOutline,
   mdiCheckCircleOutline,

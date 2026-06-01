@@ -21,6 +21,12 @@ export type BodyCreateTaskApiDocgenAgentTaskCreatePost = {
      */
     doc_type?: '需求规格说明书' | '架构设计文档' | '测试文档';
     /**
+     * Generation Mode
+     *
+     * 生成模式
+     */
+    generation_mode?: 'structured' | 'prompt_only';
+    /**
      * Source File
      *
      * 需求文件（txt/md），兼容旧字段
@@ -39,13 +45,6 @@ export type BodyCreateTaskApiDocgenAgentTaskCreatePost = {
      */
     task_id?: string | null;
 };
-
-/**
- * Category
- *
- * Enumeration for document categories.
- */
-export type Category = 'test_case' | 'drg_group' | 'requirement' | 'ARCH' | 'test_case_doc' | 'any';
 
 /**
  * DocgenTaskStatusResponse
@@ -81,6 +80,10 @@ export type DocgenTaskTraceResponse = {
      * Task Title
      */
     task_title?: string;
+    /**
+     * Generation Mode
+     */
+    generation_mode?: string;
     /**
      * Document Id
      */
@@ -140,9 +143,11 @@ export type Document = {
      */
     content: string;
     /**
+     * Category
+     *
      * The category of the document
      */
-    category?: Category;
+    category?: string;
     /**
      * Created At
      *
@@ -217,6 +222,10 @@ export type StartDocgenTaskResponse = {
      * Task Title
      */
     task_title?: string;
+    /**
+     * Generation Mode
+     */
+    generation_mode?: string;
 };
 
 /**
@@ -522,7 +531,7 @@ export type ListCategoriesApiDocCategoriesGetResponses = {
      *
      * Successful Response
      */
-    200: Array<Category>;
+    200: Array<string>;
 };
 
 export type ListCategoriesApiDocCategoriesGetResponse = ListCategoriesApiDocCategoriesGetResponses[keyof ListCategoriesApiDocCategoriesGetResponses];
@@ -722,7 +731,7 @@ export type TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses = {
 
 export type TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponse = TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses[keyof TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses];
 
-export type DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData = {
+export type GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetData = {
     body?: never;
     path: {
         /**
@@ -731,6 +740,75 @@ export type DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData = {
         task_id: string;
     };
     query?: never;
+    url: '/api/docgen_agent/task/{task_id}/html';
+};
+
+export type GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetError = GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetErrors[keyof GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetErrors];
+
+export type GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/docgen_agent/task/{task_id}/images';
+};
+
+export type ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetError = ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetErrors[keyof ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetErrors];
+
+export type ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetResponses = {
+    /**
+     * Response List Task Images Api Docgen Agent Task  Task Id  Images Get
+     *
+     * Successful Response
+     */
+    200: Array<{
+        [key: string]: string;
+    }>;
+};
+
+export type ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetResponse = ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetResponses[keyof ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetResponses];
+
+export type DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: {
+        /**
+         * Include Images
+         *
+         * 为 true 时返回 Markdown 与本地图片 zip 包
+         */
+        include_images?: boolean;
+    };
     url: '/api/docgen_agent/task/{task_id}/download';
 };
 
@@ -758,7 +836,14 @@ export type DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetData = {
          */
         task_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Include Images
+         *
+         * 为 true 时返回 PDF 与本地图片 zip 包
+         */
+        include_images?: boolean;
+    };
     url: '/api/docgen_agent/task/{task_id}/download/pdf';
 };
 

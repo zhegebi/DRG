@@ -1,6 +1,7 @@
 """docgen_agent task API."""
 
 import asyncio
+import io
 import json
 import re
 import shutil
@@ -9,9 +10,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional
+from urllib.parse import quote, unquote
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlmodel import delete, select
@@ -24,7 +27,7 @@ from server.user.auth import get_current_user
 from server.user.table import User
 
 from .table import DocgenTask
-from .tools import OUTPUT_DIR, client
+from .tools import OUTPUT_DIR, build_document_html, client, document_image_dir_for_md
 from .workflow import (
     GenerationTerminated,
     DEFAULT_GENERATION_MODE,
@@ -308,11 +311,11 @@ def _fallback_task_title(doc_type: str, prompt: str, source_paths: list[str]) ->
     return _display_title(doc_type)
 
 
-def _generate_task_title(doc_type: str, prompt: str, source_paths: list[str]) -> str:
+async def _generate_task_title(doc_type: str, prompt: str, source_paths: list[str]) -> str:
     fallback = _fallback_task_title(doc_type, prompt, source_paths)
     try:
         file_names = "、".join(Path(path).name for path in source_paths[:3]) or "无"
-        resp = client.chat.completions.create(
+        resp = await client.chat.completions.create(
             model="deepseek-v4-pro",
             messages=[
                 {
@@ -356,6 +359,65 @@ def _safe_output_path(path_text: str) -> Path:
     return path
 
 
+def _normalize_markdown_image_target(raw_target: str) -> str:
+    target = raw_target.strip()
+    if target.startswith("<") and ">" in target:
+        target = target[1 : target.index(">")]
+    elif re.search(r"\s+['\"]", target):
+        target = re.split(r"\s+['\"]", target, maxsplit=1)[0]
+    return unquote(target.strip().strip("'\""))
+
+
+def _markdown_image_paths(md_path: Path) -> list[Path]:
+    output_root = OUTPUT_DIR.resolve()
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    text = md_path.read_text(encoding="utf-8")
+    for match in re.finditer(r"!\[[^\]]*\]\(([^)]+)\)", text):
+        target = _normalize_markdown_image_target(match.group(1))
+        if not target or target.startswith(("http://", "https://", "data:")):
+            continue
+        target = target.split("#", 1)[0].split("?", 1)[0]
+        candidate = Path(target)
+        if not candidate.is_absolute():
+            candidate = md_path.parent / candidate
+        try:
+            candidate = candidate.resolve()
+            candidate.relative_to(output_root)
+        except (OSError, ValueError):
+            logger.warning(f"Skip packaging image outside output dir: {target}")
+            continue
+        if candidate.exists() and candidate.is_file() and candidate not in seen:
+            paths.append(candidate)
+            seen.add(candidate)
+    return paths
+
+
+def _attachment_header(filename: str) -> str:
+    return f"attachment; filename*=utf-8''{quote(filename)}"
+
+
+def _document_package_response(document_path: Path, md_path: Optional[Path] = None) -> StreamingResponse:
+    output_root = OUTPUT_DIR.resolve()
+    zip_buffer = io.BytesIO()
+    with ZipFile(zip_buffer, "w", ZIP_DEFLATED) as archive:
+        archive.write(document_path, arcname=document_path.name)
+        if md_path:
+            for image_path in _markdown_image_paths(md_path):
+                archive_name = image_path.resolve().relative_to(output_root).as_posix()
+                archive.write(image_path, arcname=archive_name)
+    zip_name = document_path.with_suffix(".zip").name
+    return StreamingResponse(
+        iter([zip_buffer.getvalue()]),
+        media_type="application/zip",
+        headers={"Content-Disposition": _attachment_header(zip_name)},
+    )
+
+
+def _markdown_package_response(md_path: Path) -> StreamingResponse:
+    return _document_package_response(md_path, md_path)
+
+
 def _save_one_uploaded_source_file(source_file: UploadFile) -> str:
     original_name = Path(source_file.filename or "uploaded.md").name
     ext = Path(original_name).suffix.lower()
@@ -386,7 +448,7 @@ def _save_uploaded_source_files(
     return saved
 
 
-def _run_agent_background(
+async def _run_agent_background(
     task_id: str,
     doc_type: DocType,
     prompt: str,
@@ -394,7 +456,7 @@ def _run_agent_background(
     generation_mode: GenerationMode = DEFAULT_GENERATION_MODE,
 ) -> None:
     try:
-        run_agent(
+        await run_agent(
             doc_type=doc_type,
             user_hint=prompt,
             source_files=source_paths,
@@ -424,7 +486,7 @@ async def create_task(
     """创建后台文档生成任务，立即返回 task_id。"""
     source_paths = _save_uploaded_source_files(source_file, source_files)
     task_id = task_id or uuid.uuid4().hex
-    task_title = _generate_task_title(doc_type, prompt, source_paths)
+    task_title = await _generate_task_title(doc_type, prompt, source_paths)
     assert current_user.id is not None, "current_user.id is None"
     generation_mode = normalize_generation_mode(generation_mode)
     initial_trace = start_generation_trace(
@@ -576,12 +638,106 @@ async def terminate_task(
     return TerminateResponse(status="terminate_requested", task_id=task_id)
 
 
+@router.get("/task/{task_id}/html")
+async def get_task_html(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> Response:
+    """返回文档生成任务经完整预处理后的 HTML（含 CSS + base64 图片），供前端打印使用。"""
+    trace = get_generation_trace(task_id)
+    row = await db_client.get(DocgenTask, task_id)
+    payload = _normalize_trace_payload(task_id, trace, row) if trace else (_trace_payload_from_db(row) if row else None)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    output_path = payload.get("output_path")
+    if not output_path:
+        raise HTTPException(status_code=409, detail="文档尚未生成完成")
+    path = _safe_output_path(str(output_path))
+    if path.suffix.lower() != ".md":
+        candidate = path.with_suffix(".md")
+        if candidate.exists():
+            path = _safe_output_path(str(candidate))
+        else:
+            raise HTTPException(status_code=404, detail="未找到 Markdown 文件，无法生成打印 HTML")
+    html = build_document_html(str(path))
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
+@router.get("/task/{task_id}/images")
+async def list_task_images(
+    task_id: str,
+    db_client: AsyncSession = Depends(get_async_session),
+) -> list[dict[str, str]]:
+    """返回文档关联的所有图片（含 Markdown 引用图片 + 自动生成的图表 PNG）。"""
+    trace = get_generation_trace(task_id)
+    row = await db_client.get(DocgenTask, task_id)
+    payload = _normalize_trace_payload(task_id, trace, row) if trace else (_trace_payload_from_db(row) if row else None)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    output_path = payload.get("output_path")
+    if not output_path:
+        return []
+
+    path = _safe_output_path(str(output_path))
+    if path.suffix.lower() != ".md":
+        candidate = path.with_suffix(".md")
+        if candidate.exists():
+            path = _safe_output_path(str(candidate))
+        else:
+            return []
+
+    output_root = OUTPUT_DIR.resolve()
+    results: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    # 1) Markdown 引用的图片
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"!\[([^\]]*)\]\(([^)]+)\)", text):
+            target = _normalize_markdown_image_target(match.group(2))
+            if not target or target.startswith(("http://", "https://", "data:")):
+                continue
+            target = target.split("#", 1)[0].split("?", 1)[0]
+            candidate = Path(target)
+            if not candidate.is_absolute():
+                candidate = path.parent / candidate
+            try:
+                candidate = candidate.resolve()
+                candidate.relative_to(output_root)
+            except (OSError, ValueError):
+                continue
+            if candidate.exists() and candidate.is_file():
+                rel = str(candidate.relative_to(output_root)).replace("\\", "/")
+                if rel not in seen:
+                    seen.add(rel)
+                    alt = match.group(1).strip() or candidate.stem
+                    results.append({"path": rel, "alt": alt})
+
+    # 2) 自动生成并归档到该 Markdown 专属图片文件夹中的图片
+    image_dir = document_image_dir_for_md(path).resolve()
+    for img_ext in ("*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg"):
+        if not image_dir.exists():
+            continue
+        for img_file in image_dir.rglob(img_ext):
+            try:
+                img_file.resolve().relative_to(output_root)
+            except (OSError, ValueError):
+                continue
+            rel = str(img_file.resolve().relative_to(output_root)).replace("\\", "/")
+            if rel not in seen:
+                seen.add(rel)
+                results.append({"path": rel, "alt": img_file.stem})
+
+    return results
+
+
 @router.get("/task/{task_id}/download")
 async def download_task_result(
     task_id: str,
+    include_images: bool = Query(False, description="为 true 时返回 Markdown 与本地图片 zip 包"),
     db_client: AsyncSession = Depends(get_async_session),
-) -> FileResponse:
-    """下载指定任务最终生成的 Markdown 文档。"""
+) -> Response:
+    """下载指定任务最终生成的 Markdown 文档，可选择同时打包图片。"""
     trace = get_generation_trace(task_id)
     row = await db_client.get(DocgenTask, task_id)
     payload = _normalize_trace_payload(task_id, trace, row) if trace else (_trace_payload_from_db(row) if row else None)
@@ -593,6 +749,8 @@ async def download_task_result(
     path = _safe_output_path(str(output_path))
     if path.suffix.lower() == ".pdf":
         path = _safe_output_path(str(path.with_suffix(".md")))
+    if include_images:
+        return _markdown_package_response(path)
     return FileResponse(
         path,
         filename=path.name,
@@ -603,9 +761,10 @@ async def download_task_result(
 @router.get("/task/{task_id}/download/pdf")
 async def download_task_pdf(
     task_id: str,
+    include_images: bool = Query(False, description="为 true 时返回 PDF 与本地图片 zip 包"),
     db_client: AsyncSession = Depends(get_async_session),
-) -> FileResponse:
-    """下载指定任务生成的 PDF 文档。"""
+) -> Response:
+    """下载指定任务生成的 PDF 文档，可选择同时打包图片。"""
     trace = get_generation_trace(task_id)
     row = await db_client.get(DocgenTask, task_id)
     payload = _normalize_trace_payload(task_id, trace, row) if trace else (_trace_payload_from_db(row) if row else None)
@@ -618,6 +777,15 @@ async def download_task_pdf(
     path = _safe_output_path(str(pdf_path or Path(str(md_path)).with_suffix(".pdf")))
     if path.suffix.lower() != ".pdf":
         raise HTTPException(status_code=404, detail="PDF 文件不存在，请确认转换已完成")
+    if include_images:
+        markdown_path: Optional[Path] = None
+        try:
+            candidate = _safe_output_path(str(md_path or path.with_suffix(".md")))
+            if candidate.suffix.lower() == ".md":
+                markdown_path = candidate
+        except HTTPException as exc:
+            logger.warning(f"Skip packaging PDF images because Markdown is unavailable: {exc.detail}")
+        return _document_package_response(path, markdown_path)
     return FileResponse(
         path,
         filename=path.name,
@@ -643,7 +811,7 @@ async def delete_task(
 
 @router.get("/documents/{file_name:path}/download")
 async def download_document(file_name: str) -> FileResponse:
-    """按文件名下载 output_docs 目录中的文档或图片。支持子目录路径，如 diagrams/xxx.png。"""
+    """按文件名下载 output_docs 目录中的文档或图片。支持子目录路径，如 xxx_images/xxx.png。"""
     path = _safe_output_path(str(OUTPUT_DIR / file_name))
     return FileResponse(
         path,

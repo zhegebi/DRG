@@ -1,4 +1,7 @@
-import { listDocTypesApiDocgenAgentDocTypesGet } from '@/api'
+import {
+  deleteTaskApiDocgenAgentTaskTaskIdDelete,
+  listDocTypesApiDocgenAgentDocTypesGet,
+} from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 export type DocType = '需求规格说明书' | '架构设计文档' | '测试文档'
@@ -148,6 +151,16 @@ export const getDocTypes = async (): Promise<DocType[]> => {
   return (data || []) as DocType[]
 }
 
+export const deleteRun = async (runId: string): Promise<boolean> => {
+  const { data, error } = await deleteTaskApiDocgenAgentTaskTaskIdDelete({
+    path: {
+      task_id: runId,
+    },
+  })
+  if (error) throw toError(error)
+  return Boolean(data)
+}
+
 export const startGeneration = async (
   prompt: string,
   docType: DocType,
@@ -229,10 +242,16 @@ const filenameFromDisposition = (disposition: string | null, fallback: string) =
   return plain || fallback
 }
 
-const downloadRunFile = async (runId: string, kind: 'markdown' | 'pdf', fallbackName: string) => {
-  const url = kind === 'pdf'
+const downloadRunFile = async (
+  runId: string,
+  kind: 'markdown' | 'pdf',
+  fallbackName: string,
+  options: { includeImages?: boolean } = {},
+) => {
+  let url = kind === 'pdf'
     ? `${DOCGEN_BASE}/task/${runId}/download/pdf`
     : `${DOCGEN_BASE}/task/${runId}/download`
+  if (options.includeImages) url += '?include_images=true'
   const resp = await fetch(url, { headers: authHeaders() })
   if (!resp.ok) throw new Error(`下载失败：HTTP ${resp.status}`)
 
@@ -256,20 +275,32 @@ export const fetchRunFile = async (runId: string, kind: 'markdown' | 'pdf') => {
   return await resp.blob()
 }
 
-export const downloadMarkdown = async (runId: string, fileName: string) => {
-  await downloadRunFile(runId, 'markdown', fileName)
+export const fetchImageList = async (runId: string) => {
+  const url = `${DOCGEN_BASE}/task/${runId}/images`
+  const resp = await fetch(url, { headers: authHeaders() })
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return (await resp.json()) as { path: string; alt: string }[]
 }
 
-export const downloadPdf = async (runId: string, fileName: string) => {
-  await downloadRunFile(runId, 'pdf', fileName)
+export const downloadMarkdown = async (runId: string, fileName: string, includeImages = true) => {
+  const fallbackName = includeImages ? fileName.replace(/\.md$/i, '.zip') : fileName
+  await downloadRunFile(runId, 'markdown', fallbackName, { includeImages })
 }
 
-export const downloadDocImage = async (imagePath: string) => {
+export const downloadPdf = async (runId: string, fileName: string, includeImages = true) => {
+  const fallbackName = includeImages ? fileName.replace(/\.pdf$/i, '.zip') : fileName
+  await downloadRunFile(runId, 'pdf', fallbackName, { includeImages })
+}
+
+export const fetchDocImage = async (imagePath: string) => {
   const url = `${DOCGEN_BASE}/documents/${encodeURIComponent(imagePath)}/download`
   const resp = await fetch(url, { headers: authHeaders() })
   if (!resp.ok) throw new Error(`下载图片失败：HTTP ${resp.status}`)
+  return await resp.blob()
+}
 
-  const blob = await resp.blob()
+export const downloadDocImage = async (imagePath: string) => {
+  const blob = await fetchDocImage(imagePath)
   const objectUrl = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = objectUrl
@@ -315,9 +346,9 @@ export const eventTypeLabelMap: Record<string, string> = {
 }
 
 export const runStatusLabelMap: Record<string, string> = {
-  running: '生成中',
+  running: '进行中',
   completed: '已完成',
-  failed: '失败',
-  terminate_requested: '终止中',
-  terminated: '已终止',
+  failed: '错误',
+  terminate_requested: '中止',
+  terminated: '中止',
 }

@@ -14,7 +14,7 @@
     read_data_models   — 汇总数据模型线索
     read_architecture_context — 汇总架构设计文档上下文
     read_test_context  — 汇总测试文档上下文
-    convert_to_pdf     — MD → PDF（含排版样式）
+    convert_to_pdf     — 预处理 MD 为 HTML（PDF 由前端打印完成）
 """
 
 import base64
@@ -23,14 +23,16 @@ import html as html_module
 import json
 import os
 import re
+import shutil
 import sys
 import tomllib
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, cast
+from urllib.parse import unquote
 
 from loguru import logger
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 try:
     from ..config import API_KEY
@@ -48,10 +50,13 @@ DEFAULT_REQUIREMENT_PATH = AGENT_INPUT_DIR / "requirement.md"
 OUTPUT_DIR = CURRENT_DIR / "output_docs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-DIAGRAM_DIR = OUTPUT_DIR / "diagrams"
+TEMP_IMAGE_DIR = OUTPUT_DIR / "_tmp_images"
+TEMP_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+DIAGRAM_DIR = TEMP_IMAGE_DIR / "shared"
 DIAGRAM_DIR.mkdir(parents=True, exist_ok=True)
 
-client = OpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
+client = AsyncOpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 
 _IGNORED_DIRS = {
     ".git",
@@ -65,7 +70,6 @@ _IGNORED_DIRS = {
     "build",
     "node_modules",
     "output_docs",
-    ".playwright",
 }
 _TEXT_EXTENSIONS = {
     ".bat",
@@ -107,6 +111,7 @@ _source_md_content_ctx: ContextVar[str] = ContextVar(
     "docgen_source_content",
     default=f"### 默认需求文件：{DEFAULT_REQUIREMENT_PATH.name}\n{_DEFAULT_SOURCE_CONTENT}",
 )
+_image_output_dir_ctx: ContextVar[str] = ContextVar("docgen_image_output_dir", default=str(DIAGRAM_DIR))
 
 _LEGACY_DOCUMENT_META_KEYS = ("文档编号", "版本号", "编制日期", "文档状态")
 
@@ -143,6 +148,131 @@ def set_source_files(paths: Iterable[str | Path] | None = None) -> None:
 # ============================================================
 # 工具定义
 # ============================================================
+def _safe_asset_stem(value: str) -> str:
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", value).strip(" .")
+    return safe or "document"
+
+
+def document_image_dir_for_md(md_path: str | Path) -> Path:
+    """Return the image folder dedicated to one Markdown file."""
+    path = Path(md_path)
+    return path.parent / f"{_safe_asset_stem(path.stem)}_images"
+
+
+def set_image_output_dir(run_id: str | None = None) -> None:
+    """Set the temporary image output directory for the current generation run."""
+    image_dir = TEMP_IMAGE_DIR / _safe_asset_stem(run_id or "shared")
+    image_dir.mkdir(parents=True, exist_ok=True)
+    _image_output_dir_ctx.set(str(image_dir))
+
+
+def reset_image_output_dir() -> None:
+    _image_output_dir_ctx.set(str(DIAGRAM_DIR))
+
+
+def _current_image_output_dir() -> Path:
+    image_dir = Path(_image_output_dir_ctx.get())
+    image_dir.mkdir(parents=True, exist_ok=True)
+    return image_dir
+
+
+def _is_local_image_target(target: str) -> bool:
+    value = target.strip().lower()
+    return bool(value) and not value.startswith(("http://", "https://", "data:", "blob:"))
+
+
+def _split_markdown_image_target(raw_target: str) -> tuple[str, str, bool]:
+    target = raw_target.strip()
+    if target.startswith("<") and ">" in target:
+        end = target.index(">")
+        return unquote(target[1:end]), target[end + 1 :], True
+    match = re.match(r"(?P<path>\S+)(?P<suffix>\s+['\"].*)?$", target)
+    if match:
+        return unquote(match.group("path")), match.group("suffix") or "", False
+    return unquote(target.strip().strip("'\"")), "", False
+
+
+def _format_markdown_image_target(path: str, suffix: str, wrapped: bool) -> str:
+    return f"<{path}>{suffix}" if wrapped else f"{path}{suffix}"
+
+
+def _output_relative_path(path: Path) -> str:
+    return path.resolve().relative_to(OUTPUT_DIR.resolve()).as_posix()
+
+
+def _resolve_output_image_target(target: str, md_path: Path) -> Path | None:
+    clean_target = target.split("#", 1)[0].split("?", 1)[0]
+    candidate = Path(clean_target)
+    if not candidate.is_absolute():
+        candidate = md_path.parent / candidate
+    try:
+        candidate = candidate.resolve()
+        candidate.relative_to(OUTPUT_DIR.resolve())
+    except (OSError, ValueError):
+        return None
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    return candidate
+
+
+def _unique_asset_path(asset_dir: Path, source_path: Path) -> Path:
+    stem = _safe_asset_stem(source_path.stem)
+    suffix = source_path.suffix
+    candidate = asset_dir / f"{stem}{suffix}"
+    index = 1
+    source_resolved = source_path.resolve()
+    while candidate.exists() and candidate.resolve() != source_resolved:
+        candidate = asset_dir / f"{stem}_{index}{suffix}"
+        index += 1
+    return candidate
+
+
+def _copy_or_move_image_to_assets(source_path: Path, asset_dir: Path) -> Path:
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    destination = _unique_asset_path(asset_dir, source_path)
+    if source_path.resolve() == destination.resolve():
+        return destination
+
+    current_image_dir = _current_image_output_dir().resolve()
+    try:
+        source_path.resolve().relative_to(current_image_dir)
+        shutil.move(str(source_path), destination)
+    except (OSError, ValueError):
+        shutil.copy2(source_path, destination)
+    return destination
+
+
+def relocate_markdown_images_to_document_dir(content: str, md_path: str | Path) -> str:
+    """Move/copy local Markdown images into this document's own image folder and rewrite links."""
+    markdown_path = Path(md_path)
+    asset_dir = document_image_dir_for_md(markdown_path)
+    relocated_targets: dict[str, str] = {}
+
+    def replace_image(match: re.Match[str]) -> str:
+        alt_text = match.group(1)
+        raw_target = match.group(2)
+        target, suffix, wrapped = _split_markdown_image_target(raw_target)
+        if not _is_local_image_target(target):
+            return match.group(0)
+        if target in relocated_targets:
+            new_target = _format_markdown_image_target(relocated_targets[target], suffix, wrapped)
+            return f"![{alt_text}]({new_target})"
+        source_path = _resolve_output_image_target(target, markdown_path)
+        if source_path is None:
+            return match.group(0)
+        try:
+            asset_path = _copy_or_move_image_to_assets(source_path, asset_dir)
+            new_path = _output_relative_path(asset_path)
+            relocated_targets[target] = new_path
+            new_target = _format_markdown_image_target(new_path, suffix, wrapped)
+            return f"![{alt_text}]({new_target})"
+        except Exception as exc:
+            logger.warning(f"Cannot relocate Markdown image {target}: {exc}")
+            return match.group(0)
+
+    return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", replace_image, content)
+
+
 ToolDefinition = dict[str, Any]
 
 TOOLS: list[ToolDefinition] = [
@@ -331,7 +461,7 @@ TOOLS: list[ToolDefinition] = [
         "function": {
             "name": "render_mermaid",
             "description": "将 Mermaid 图表代码渲染为 PNG 图片文件。"
-            "返回值为相对于 output_docs/ 的图片路径（如 'diagrams/use_case.png'），请直接将该路径用于 Markdown 图片引用 ![标题](返回值)，不要自行拼接或修改路径。",
+            "返回值为相对于 output_docs/ 的临时图片路径；保存 Markdown 时会自动归档到该文档自己的图片文件夹。请直接将返回值用于 Markdown 图片引用 ![标题](返回值)，不要自行拼接或修改路径。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -467,6 +597,7 @@ def _handle_save_document(arguments: dict) -> str:
     if doc_type:
         content = normalize_document_header(content, doc_type, metadata_source)
     output_path = OUTPUT_DIR / file_name
+    content = relocate_markdown_images_to_document_dir(content, output_path)
     output_path.write_text(content, encoding="utf-8")
     logger.info(f"   save_document → {output_path}")
     return str(output_path)
@@ -537,14 +668,14 @@ def _handle_render_mermaid(arguments: dict) -> str:
     code = arguments.get("code", "")
     file_name = arguments.get("file_name", "diagram")
     fmt = arguments.get("format", "png")
-    logger.info(f"   render_mermaid → {DIAGRAM_DIR / file_name}.{fmt}")
+    logger.info(f"   render_mermaid → {_current_image_output_dir() / file_name}.{fmt}")
     return _render_mermaid_to_file(code, file_name, fmt)
 
 
 def _handle_render_plantuml(arguments: dict) -> str:
     code = arguments.get("code", "")
     file_name = arguments.get("file_name", "diagram")
-    logger.info(f"   render_plantuml → {DIAGRAM_DIR / file_name}.png")
+    logger.info(f"   render_plantuml → {_current_image_output_dir() / file_name}.png")
     return _render_plantuml_to_file(code, file_name)
 
 
@@ -1132,7 +1263,7 @@ def _render_mermaid_to_file(code: str, file_name: str, fmt: str = "png") -> str:
                 raise ValueError(f"非图片响应: {content_type}")
             # 成功：保存并返回
             suffix = f"_{i}" if i > 0 else ""
-            output_path = DIAGRAM_DIR / f"{file_name}{suffix}.{fmt}"
+            output_path = _current_image_output_dir() / f"{file_name}{suffix}.{fmt}"
             output_path.write_bytes(resp.content)
             return str(output_path.relative_to(OUTPUT_DIR))
         except Exception as e:
@@ -1141,7 +1272,7 @@ def _render_mermaid_to_file(code: str, file_name: str, fmt: str = "png") -> str:
 
     # 全部失败，fallback
     logger.warning(f"Mermaid 全部渲染失败: {last_error}")
-    fallback_path = DIAGRAM_DIR / f"{file_name}.txt"
+    fallback_path = _current_image_output_dir() / f"{file_name}.txt"
     fallback_path.write_text(f"```mermaid\n{code}\n```\n", encoding="utf-8")
     return f"[渲染失败] Mermaid 代码已保存至 {fallback_path}，错误: {last_error}"
 
@@ -1168,7 +1299,7 @@ def _render_plantuml_to_file(code: str, file_name: str) -> str:
         url = f"https://www.plantuml.com/plantuml/png/{encoded}"
     except Exception as e:
         logger.warning(f"PlantUML 编码失败: {e}")
-        fallback_path = DIAGRAM_DIR / f"{file_name}.txt"
+        fallback_path = _current_image_output_dir() / f"{file_name}.txt"
         fallback_path.write_text(f"```plantuml\n{code}\n```\n", encoding="utf-8")
         return f"[渲染失败] PlantUML 编码失败: {e}"
 
@@ -1180,11 +1311,11 @@ def _render_plantuml_to_file(code: str, file_name: str) -> str:
             raise ValueError(f"非图片响应: {content_type}")
     except Exception as e:
         logger.warning(f"PlantUML 渲染失败: {e}")
-        fallback_path = DIAGRAM_DIR / f"{file_name}.txt"
+        fallback_path = _current_image_output_dir() / f"{file_name}.txt"
         fallback_path.write_text(f"```plantuml\n{code}\n```\n", encoding="utf-8")
         return f"[渲染失败] PlantUML 代码已保存至 {fallback_path}，错误: {e}"
 
-    output_path = DIAGRAM_DIR / f"{file_name}.png"
+    output_path = _current_image_output_dir() / f"{file_name}.png"
     output_path.write_bytes(resp.content)
     return str(output_path.relative_to(OUTPUT_DIR))
 
@@ -1270,7 +1401,7 @@ def _layout_css() -> str:
 
     heading_css = "\n\n".join(heading_css_parts)
 
-    # 分页符（h2 前分页，排除第一个 h2；同时用 legacy 和标准属性兼容 Chromium）
+    # 分页符（h2 前分页，排除第一个 h2；同时使用 legacy 和标准属性提升渲染兼容性）
     pb_css = ""
     if page_breaks.get("enabled"):
         pb_css = """
@@ -1294,6 +1425,11 @@ h2:first-of-type {
     margin-bottom: {ps["margin_bottom"]};
     margin-left: {ps["margin_left"]};
     margin-right: {ps["margin_right"]};
+    @bottom-center {{
+        content: "第 " counter(page) " 页";
+        font-size: 9pt;
+        text-align: center;
+    }}
 }}
 
 body {{
@@ -2291,6 +2427,66 @@ def _document_title_for_type(doc_type: str) -> str:
     return doc_type
 
 
+def _schema_document_titles() -> set[str]:
+    titles: set[str] = set()
+    for doc in _OUTPUT_SCHEMA.get("documents", []):
+        doc_type = str(doc.get("doc_type") or "").strip()
+        structure_title = str(doc.get("structure", {}).get("title") or "").strip()
+        if doc_type:
+            titles.add(doc_type)
+        if structure_title:
+            titles.add(structure_title)
+    return titles
+
+
+def _schema_section_titles_for_type(doc_type: str) -> set[str]:
+    def _collect(sections: list[dict]) -> set[str]:
+        titles: set[str] = set()
+        for section in sections:
+            title = str(section.get("title") or "").strip()
+            if title:
+                titles.add(title)
+            children = section.get("sections") or section.get("children") or []
+            if isinstance(children, list):
+                titles.update(_collect([child for child in children if isinstance(child, dict)]))
+        return titles
+
+    for doc in _OUTPUT_SCHEMA.get("documents", []):
+        if doc.get("doc_type") != doc_type:
+            continue
+        sections = doc.get("structure", {}).get("sections", [])
+        if isinstance(sections, list):
+            return _collect([section for section in sections if isinstance(section, dict)])
+    return set()
+
+
+def _title_match_key(title: str) -> str:
+    import re as _re
+
+    clean = title.strip()
+    clean = _re.sub(
+        r"^\s*(?:第?\s*[一二三四五六七八九十百千万\d]+\s*[章节]?|[A-Z]?\d+(?:[.\-]\d+)*)"
+        r"\s*[.、．:\uff1a]?\s*",
+        "",
+        clean,
+    )
+    return clean.strip()
+
+
+def _is_generic_document_title(title: str) -> bool:
+    key = _title_match_key(title)
+    return key in _schema_document_titles()
+
+
+def _is_specific_document_title(title: str, doc_type: str = "") -> bool:
+    clean = title.strip()
+    if not clean or _is_generic_document_title(clean):
+        return False
+    if doc_type and _title_match_key(clean) in _schema_section_titles_for_type(doc_type):
+        return False
+    return True
+
+
 def _default_meta_value(key: str, doc_type: str) -> str:
     doc_meta = json.loads(_OUTPUT_LAYOUT).get("document_meta", {})
     defaults = doc_meta.get("defaults", {})
@@ -2351,7 +2547,7 @@ def normalize_document_header(md_text: str, doc_type: str = "", metadata_source:
     """Ensure the document has exactly one H1 and one cover-information block."""
     import re as _re
 
-    title = _document_title_for_type(doc_type)
+    default_title = _document_title_for_type(doc_type)
     metadata = _extract_metadata_values(md_text, doc_type, metadata_source)
     lines = _remove_document_metadata_lines(md_text).splitlines()
     body_lines = []
@@ -2364,7 +2560,7 @@ def normalize_document_header(md_text: str, doc_type: str = "", metadata_source:
             continue
         body_lines.append(line)
 
-    title = title or first_title or doc_type or "文档"
+    title = first_title if _is_specific_document_title(first_title, doc_type) else (default_title or first_title or doc_type or "文档")
     meta_lines = [f"**{field['key']}**：{metadata[field['key']]}  " for field in _document_meta_fields()]
     body = "\n".join(body_lines).strip()
     return f"# {title}\n\n" + "\n".join(meta_lines) + "\n\n" + body + "\n"
@@ -2373,10 +2569,9 @@ def normalize_document_header(md_text: str, doc_type: str = "", metadata_source:
 def _extract_doc_info(md_text: str) -> dict:
     """从 Markdown 中提取封面信息。字段名与 output_layout.json document_meta.fields 对齐。"""
     lo = json.loads(_OUTPUT_LAYOUT)
-    prefix = lo.get("document_title", {}).get("prefix", "")
     meta_fields = lo.get("document_meta", {}).get("fields", [])
 
-    info = {"project": prefix, "title": ""}
+    info = {"title": ""}
     for f in meta_fields:
         info[f["key"]] = ""
 
@@ -2394,6 +2589,16 @@ def _extract_doc_info(md_text: str) -> dict:
     return info
 
 
+def _cover_title(title: str) -> str:
+    prefix = str(json.loads(_OUTPUT_LAYOUT).get("document_title", {}).get("prefix", "")).strip()
+    clean_title = title.strip()
+    if not clean_title:
+        clean_title = "文档"
+    if not prefix or clean_title.startswith(prefix) or _is_specific_document_title(clean_title):
+        return clean_title
+    return f"{prefix}{clean_title}"
+
+
 def _format_title_html(md_body: str, md_text: str, doc_info: dict | None = None) -> str:
     """将 H1 替换为居中标题块，封面信息垂直排列，整体垂直水平居中并独立成页。
     若传入 doc_info 则直接使用，否则从 md_text 提取。"""
@@ -2401,8 +2606,7 @@ def _format_title_html(md_body: str, md_text: str, doc_info: dict | None = None)
     meta_fields = lo.get("document_meta", {}).get("fields", [])
     info = doc_info or _extract_doc_info(md_text)
     title = str(info["title"])
-    prefix = str(info["project"])
-    full_title = title if prefix and title.startswith(prefix) else f"{prefix}{title}"
+    full_title = _cover_title(title)
 
     meta_lines = []
     for f in meta_fields:
@@ -2532,22 +2736,21 @@ def _center_bare_images(html_body: str) -> str:
 
 
 # ============================================================
-# MD → PDF 转换
+# MD → HTML 生成（提取排版 CSS + 预处理，供打印和 PDF 转换复用）
 # ============================================================
-def convert_to_pdf(md_path: str) -> str:
-    """将 Markdown 文档转换为 PDF，应用排版规范。
+def build_document_html(md_path: str) -> str:
+    """将 Markdown 文档预处理并组装为完整 HTML（含 CSS + base64 图片 + 标题格式化）。
 
     处理流程:
-        1. 预处理 — Mermaid 代码块渲染为 PNG，清理 LLM 客套话
-        2. MD → HTML — 使用 Python-Markdown 库
-        3. 标题格式化 — 居中 + 项目名前缀 + 封面信息
-        4. HTML + CSS → PDF — 使用 Playwright (Chromium)
+        1. 清理客套话 + Mermaid 渲染为 PNG + 列表修正
+        2. MD → HTML（tables, fenced_code, codehilite, toc, attr_list）
+        3. 图片 base64 嵌入 + 标题格式化 + 居中
+        4. 生成排版 CSS 并组装完整 HTML 文档
 
     Returns:
-        PDF 文件路径（与源 .md 同目录）
+        完整的 <!DOCTYPE html> 字符串，可直接在浏览器中查看或打印。
     """
     import re as _re
-
     import markdown as md_lib
 
     md_file = Path(md_path)
@@ -2557,16 +2760,16 @@ def convert_to_pdf(md_path: str) -> str:
     md_text = md_file.read_text(encoding="utf-8")
 
     # ── 步骤1: 清理 + Mermaid + 列表修正 ──
-    logger.info("  [PDF] 步骤1: 清理文本 + 渲染图表 + 修正列表...")
     md_text = _clean_boilerplate(md_text)
-    # 先从原始 MD 提取封面信息（删除前提取，否则 _extract_doc_info 读到空值）
     _doc_info = _extract_doc_info(md_text)
-    # 在 MD 层面移除所有文档封面信息行，标题页由 _format_title_html 统一生成。
     md_text = _remove_document_metadata_lines(md_text)
-    md_text = _render_diagram_blocks_for_html(md_text)
+    image_dir_token = _image_output_dir_ctx.set(str(document_image_dir_for_md(md_file)))
+    try:
+        md_text = _render_diagram_blocks_for_html(md_text)
+    finally:
+        _image_output_dir_ctx.reset(image_dir_token)
 
-    # ── 步骤2: MD → HTML（先转义 UML 原型符号 <<...>>，防止被当作 HTML 标签）──
-    logger.info("  [PDF] 步骤2: Markdown → HTML")
+    # ── 步骤2: MD → HTML ──
     md_text = _re.sub(
         r"<<(include|extend|uses|depends|refine|trace|implement|derive)>>",
         r"&lt;&lt;\1&gt;&gt;",
@@ -2575,15 +2778,13 @@ def convert_to_pdf(md_path: str) -> str:
     md_extensions = ["tables", "fenced_code", "codehilite", "toc", "attr_list"]
     md_body = md_lib.markdown(md_text, extensions=md_extensions)
 
-    # ── 步骤3: 图片路径 + 标题格式化 + 图表标题居中 + 图片居中 ──
-    logger.info("  [PDF] 步骤3: 格式化标题 + 图片路径 + 图表标题居中 + 图片居中")
+    # ── 步骤3: 图片路径 + 标题格式化 + 居中 ──
     md_body = _embed_images_as_base64(md_body)
     md_body = _format_title_html(md_body, md_text, _doc_info)
     md_body = _center_captions(md_body)
     md_body = _center_bare_images(md_body)
 
     # ── 步骤4: CSS + 组装 HTML ──
-    logger.info("  [PDF] 步骤4: 生成 CSS 并组装 HTML")
     css = _layout_css()
 
     html_full = f"""<!DOCTYPE html>
@@ -2599,50 +2800,34 @@ def convert_to_pdf(md_path: str) -> str:
 </body>
 </html>"""
 
-    # ── 步骤5: Playwright 渲染 PDF ──
-    logger.info("  [PDF] 步骤5: Playwright 渲染 PDF...")
-    pdf_path = md_file.with_suffix(".pdf")
+    return html_full
 
-    try:
-        from playwright.sync_api import sync_playwright
 
-        lo = json.loads(_OUTPUT_LAYOUT)
-        ps = lo.get("page_setup", {})
-        pdf_cfg = lo["pdf_rendering"]
+# MD → PDF 转换
+# ============================================================
+def convert_to_pdf(md_path: str) -> str:
+    """将 Markdown 文档转换为 PDF。
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page()
-            page.set_content(html_full, timeout=30000)
-            page.wait_for_timeout(500)
-            page.pdf(
-                path=str(pdf_path),
-                format=ps["paper_size"],
-                margin={
-                    "top": ps["margin_top"],
-                    "bottom": ps["margin_bottom"],
-                    "left": ps["margin_left"],
-                    "right": ps["margin_right"],
-                },
-                print_background=True,
-                display_header_footer=True,
-                header_template=pdf_cfg["pdf_header_template"],
-                footer_template=pdf_cfg["pdf_footer_template"],
-            )
-            browser.close()
-    except ImportError:
-        raise RuntimeError(
-            "PDF 转换需要 Playwright。安装步骤:\n"
-            "  1. uv add playwright\n"
-            "  2. .venv\\Scripts\\python.exe -m playwright install chromium"
-        )
+    后端只负责预处理 HTML（清理、图表渲染、base64 图片嵌入、CSS 排版）。
+    实际 PDF 渲染由前端打印页面完成（浏览器原生的 "另存为 PDF"），
+    无需任何系统级依赖。
 
-    logger.info(f"  [PDF] 完成 → {pdf_path}")
-    return str(pdf_path)
+    Returns:
+        Markdown 文件路径（PDF 通过前端打印生成）
+    """
+    md_file = Path(md_path)
+    if not md_file.exists():
+        raise FileNotFoundError(f"Markdown 文件不存在: {md_path}")
+
+    logger.info("  [PDF] 生成文档 HTML（PDF 将由前端打印完成）...")
+    build_document_html(md_path)
+
+    logger.info(f"  [PDF] HTML 已就绪，前端打印路径 → {md_path}")
+    return str(md_path)
 
 
 def _embed_images_as_base64(html_text: str) -> str:
-    """将 HTML 中的本地图片 src 转为 base64 data URI，避免 Chromium file:/// 路径问题。"""
+    """将 HTML 中的本地图片 src 转为 base64 data URI，避免本地路径和中文路径兼容问题。"""
     import re as _re
 
     _MIME_MAP = {

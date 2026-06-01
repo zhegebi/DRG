@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateTaskApiDocgenAgentTaskCreatePostData, CreateTaskApiDocgenAgentTaskCreatePostErrors, CreateTaskApiDocgenAgentTaskCreatePostResponses, CreateTaskApiDrgTaskCreatePostData, CreateTaskApiDrgTaskCreatePostErrors, CreateTaskApiDrgTaskCreatePostResponses, DeleteTaskApiDocgenAgentTaskTaskIdDeleteData, DeleteTaskApiDocgenAgentTaskTaskIdDeleteErrors, DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponses, DeleteTaskApiDrgTaskTaskIdDeleteData, DeleteTaskApiDrgTaskTaskIdDeleteErrors, DeleteTaskApiDrgTaskTaskIdDeleteResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetData, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetResponses, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetResponses, GetDocApiDocIdGetData, GetDocApiDocIdGetErrors, GetDocApiDocIdGetResponses, GetTaskListApiDocgenAgentTaskListGetData, GetTaskListApiDocgenAgentTaskListGetResponses, GetTaskListApiDrgTaskListGetData, GetTaskListApiDrgTaskListGetResponses, GetTaskProgressApiDrgTaskTaskIdProgressStepGetData, GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors, GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses, GetTaskResultApiDrgTaskResultTaskIdGetData, GetTaskResultApiDrgTaskResultTaskIdGetErrors, GetTaskResultApiDrgTaskResultTaskIdGetResponses, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetData, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetResponses, GetTaskStatusApiDocgenAgentTaskStatusGetData, GetTaskStatusApiDocgenAgentTaskStatusGetErrors, GetTaskStatusApiDocgenAgentTaskStatusGetResponses, GetTaskStatusApiDrgTaskStatusGetData, GetTaskStatusApiDrgTaskStatusGetErrors, GetTaskStatusApiDrgTaskStatusGetResponses, ListCategoriesApiDocCategoriesGetData, ListCategoriesApiDocCategoriesGetResponses, ListDocsApiDocListPostData, ListDocsApiDocListPostErrors, ListDocsApiDocListPostResponses, ListDocTypesApiDocgenAgentDocTypesGetData, ListDocTypesApiDocgenAgentDocTypesGetResponses, LoginApiAuthLoginPostData, LoginApiAuthLoginPostErrors, LoginApiAuthLoginPostResponses, LogoutApiAuthLogoutPostData, LogoutApiAuthLogoutPostResponses, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetData, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetErrors, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponses, RefreshAccessTokenApiAuthRefreshPostData, RefreshAccessTokenApiAuthRefreshPostErrors, RefreshAccessTokenApiAuthRefreshPostResponses, RootGetData, RootGetResponses, ServeSpaFullPathGetData, ServeSpaFullPathGetErrors, ServeSpaFullPathGetResponses, SignupApiAuthSignupPostData, SignupApiAuthSignupPostErrors, SignupApiAuthSignupPostResponses, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetData, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetErrors, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetResponses, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostData, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostErrors, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses } from './types.gen';
+import type { CreateTaskApiDocgenAgentTaskCreatePostData, CreateTaskApiDocgenAgentTaskCreatePostErrors, CreateTaskApiDocgenAgentTaskCreatePostResponses, CreateTaskApiDrgTaskCreatePostData, CreateTaskApiDrgTaskCreatePostErrors, CreateTaskApiDrgTaskCreatePostResponses, DeleteTaskApiDocgenAgentTaskTaskIdDeleteData, DeleteTaskApiDocgenAgentTaskTaskIdDeleteErrors, DeleteTaskApiDocgenAgentTaskTaskIdDeleteResponses, DeleteTaskApiDrgTaskTaskIdDeleteData, DeleteTaskApiDrgTaskTaskIdDeleteErrors, DeleteTaskApiDrgTaskTaskIdDeleteResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetData, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetResponses, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetResponses, GetDocApiDocIdGetData, GetDocApiDocIdGetErrors, GetDocApiDocIdGetResponses, GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetData, GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetErrors, GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetResponses, GetTaskListApiDocgenAgentTaskListGetData, GetTaskListApiDocgenAgentTaskListGetResponses, GetTaskListApiDrgTaskListGetData, GetTaskListApiDrgTaskListGetResponses, GetTaskProgressApiDrgTaskTaskIdProgressStepGetData, GetTaskProgressApiDrgTaskTaskIdProgressStepGetErrors, GetTaskProgressApiDrgTaskTaskIdProgressStepGetResponses, GetTaskResultApiDrgTaskResultTaskIdGetData, GetTaskResultApiDrgTaskResultTaskIdGetErrors, GetTaskResultApiDrgTaskResultTaskIdGetResponses, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetData, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetErrors, GetTaskResultStreamApiDrgTaskResultTaskIdStreamGetResponses, GetTaskStatusApiDocgenAgentTaskStatusGetData, GetTaskStatusApiDocgenAgentTaskStatusGetErrors, GetTaskStatusApiDocgenAgentTaskStatusGetResponses, GetTaskStatusApiDrgTaskStatusGetData, GetTaskStatusApiDrgTaskStatusGetErrors, GetTaskStatusApiDrgTaskStatusGetResponses, ListCategoriesApiDocCategoriesGetData, ListCategoriesApiDocCategoriesGetResponses, ListDocsApiDocListPostData, ListDocsApiDocListPostErrors, ListDocsApiDocListPostResponses, ListDocTypesApiDocgenAgentDocTypesGetData, ListDocTypesApiDocgenAgentDocTypesGetResponses, ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetData, ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetErrors, ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetResponses, LoginApiAuthLoginPostData, LoginApiAuthLoginPostErrors, LoginApiAuthLoginPostResponses, LogoutApiAuthLogoutPostData, LogoutApiAuthLogoutPostResponses, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetData, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetErrors, ReadTaskTraceApiDocgenAgentTaskTaskIdTraceGetResponses, RefreshAccessTokenApiAuthRefreshPostData, RefreshAccessTokenApiAuthRefreshPostErrors, RefreshAccessTokenApiAuthRefreshPostResponses, RootGetData, RootGetResponses, ServeSpaFullPathGetData, ServeSpaFullPathGetErrors, ServeSpaFullPathGetResponses, SignupApiAuthSignupPostData, SignupApiAuthSignupPostErrors, SignupApiAuthSignupPostResponses, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetData, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetErrors, StreamTaskTraceApiDocgenAgentTaskTaskIdTraceStreamGetResponses, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostData, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostErrors, TerminateTaskApiDocgenAgentTaskTaskIdTerminatePostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -85,7 +85,7 @@ export const listDocsApiDocListPost = <ThrowOnError extends boolean = false>(opt
 /**
  * List Categories
  *
- * List all distinct document categories.
+ * List all distinct document categories from the database.
  */
 export const listCategoriesApiDocCategoriesGet = <ThrowOnError extends boolean = false>(options?: Options<ListCategoriesApiDocCategoriesGetData, ThrowOnError>) => (options?.client ?? client).get<ListCategoriesApiDocCategoriesGetResponses, unknown, ThrowOnError>({
     responseType: 'json',
@@ -178,9 +178,31 @@ export const terminateTaskApiDocgenAgentTaskTaskIdTerminatePost = <ThrowOnError 
 });
 
 /**
+ * Get Task Html
+ *
+ * 返回文档生成任务经完整预处理后的 HTML（含 CSS + base64 图片），供前端打印使用。
+ */
+export const getTaskHtmlApiDocgenAgentTaskTaskIdHtmlGet = <ThrowOnError extends boolean = false>(options: Options<GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetData, ThrowOnError>) => (options.client ?? client).get<GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetResponses, GetTaskHtmlApiDocgenAgentTaskTaskIdHtmlGetErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/api/docgen_agent/task/{task_id}/html',
+    ...options
+});
+
+/**
+ * List Task Images
+ *
+ * 返回文档关联的所有图片（含 Markdown 引用图片 + 自动生成的图表 PNG）。
+ */
+export const listTaskImagesApiDocgenAgentTaskTaskIdImagesGet = <ThrowOnError extends boolean = false>(options: Options<ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetData, ThrowOnError>) => (options.client ?? client).get<ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetResponses, ListTaskImagesApiDocgenAgentTaskTaskIdImagesGetErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/api/docgen_agent/task/{task_id}/images',
+    ...options
+});
+
+/**
  * Download Task Result
  *
- * 下载指定任务最终生成的 Markdown 文档。
+ * 下载指定任务最终生成的 Markdown 文档，可选择同时打包图片。
  */
 export const downloadTaskResultApiDocgenAgentTaskTaskIdDownloadGet = <ThrowOnError extends boolean = false>(options: Options<DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetData, ThrowOnError>) => (options.client ?? client).get<DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetResponses, DownloadTaskResultApiDocgenAgentTaskTaskIdDownloadGetErrors, ThrowOnError>({
     responseType: 'json',
@@ -191,7 +213,7 @@ export const downloadTaskResultApiDocgenAgentTaskTaskIdDownloadGet = <ThrowOnErr
 /**
  * Download Task Pdf
  *
- * 下载指定任务生成的 PDF 文档。
+ * 下载指定任务生成的 PDF 文档，可选择同时打包图片。
  */
 export const downloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGet = <ThrowOnError extends boolean = false>(options: Options<DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetData, ThrowOnError>) => (options.client ?? client).get<DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetResponses, DownloadTaskPdfApiDocgenAgentTaskTaskIdDownloadPdfGetErrors, ThrowOnError>({
     responseType: 'json',
@@ -213,7 +235,7 @@ export const deleteTaskApiDocgenAgentTaskTaskIdDelete = <ThrowOnError extends bo
 /**
  * Download Document
  *
- * 按文件名下载 output_docs 目录中的文档。
+ * 按文件名下载 output_docs 目录中的文档或图片。支持子目录路径，如 xxx_images/xxx.png。
  */
 export const downloadDocumentApiDocgenAgentDocumentsFileNameDownloadGet = <ThrowOnError extends boolean = false>(options: Options<DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetData, ThrowOnError>) => (options.client ?? client).get<DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetResponses, DownloadDocumentApiDocgenAgentDocumentsFileNameDownloadGetErrors, ThrowOnError>({
     responseType: 'json',

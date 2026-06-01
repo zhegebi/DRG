@@ -12,7 +12,7 @@
 │  Phase 3.5: Schema校验 → 缺失章节重生成                │
 │  Phase 4: 拼接校验  → LLM 审校全文 + 封面小组信息      │
 │  Phase 5: 保存 MD   → save_document + 列表修正安全网   │
-│  Phase 6: 转 PDF    → convert_to_pdf                  │
+│  Phase 6: 预处理 HTML → convert_to_pdf                  │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -139,9 +139,9 @@ regex: ```(mermaid|plantuml)\n(code)```
 
 ---
 
-## 五、PDF 转换 (`convert_to_pdf`)
+## 五、预处理 HTML (`convert_to_pdf`)
 
-### 5 步流程
+### 4 步流程（PDF 由前端浏览器原生打印）
 
 ```
 步骤 1: 预处理
@@ -162,14 +162,12 @@ regex: ```(mermaid|plantuml)\n(code)```
 步骤 4: 组装 HTML
   └── _layout_css() → 从 output_layout.json 生成完整打印 CSS
       → <!DOCTYPE html> + <style> + <body>
-
-步骤 5: Playwright 渲染 PDF
-  └── chromium.launch() → set_content → page.pdf(page_setup.paper_size, page_setup.margins)
+      → 前端 PrintPage 拉取后通过浏览器 "另存为 PDF" 渲染
 ```
 
 ### `_embed_images_as_base64`
 
-将所有本地 `<img src="...">` 转为 `data:image/...;base64,...`。跳过 `http`/`https`/`data:` 开头的 src。路径解析相对于 `OUTPUT_DIR`。避免 Chromium `file:///` 中文路径问题。
+将所有本地 `<img src="...">` 转为 `data:image/...;base64,...`。跳过 `http`/`https`/`data:` 开头的 src。路径解析相对于 `OUTPUT_DIR`，避免本地路径和中文路径兼容问题。
 
 ### `_center_captions`
 
@@ -208,9 +206,9 @@ regex: ```(mermaid|plantuml)\n(code)```
 | `code_blocks` | `pre/code { font-family; background }` |
 | `lists` | `ul/ol/li { margin; padding }` |
 | `page_breaks` | `h2 { page-break-before: always }` |
-| `pdf_rendering` | 图片高度、表格外边距、页眉页脚模板等 PDF 渲染细节 |
+| `pdf_rendering` | 图片高度、表格外边距等 PDF 渲染细节 |
 
-全局 `img` 约束、figure 图片约束、页脚模板等均从 `pdf_rendering` 读取。
+全局 `img` 约束、figure 图片约束等均从 `pdf_rendering` 读取；页码由生成的 `@page @bottom-center` CSS 渲染。
 
 ---
 
@@ -260,4 +258,4 @@ def _resolve_project_path(path):
 | `_validate_table_captions` | tools.py:1186 | 补缺失表头 |
 | `_flatten_required_sections` | workflow.py:624 | 展平 schema 必需章节 |
 | `_generate_section_group` | workflow.py:580 | LLM 生成单个章节组 |
-| `convert_to_pdf` | tools.py:1406 | MD → HTML → PDF 全流程 |
+| `convert_to_pdf` | tools.py:2672 | MD → HTML 预处理（PDF 由前端打印） |

@@ -5,7 +5,7 @@
     Phase 2  拆解章节     — 按 output_schema 展开为 二级/三级 标题列表
     Phase 3  逐节生成     — 每个 (子)节独立调用 LLM，上下文含需求+规范+前后节摘要
     Phase 4  拼接校验     — 拼接全文 → 调用 LLM 做格式一致性校验
-    Phase 5  保存并转 PDF — save_document(.md) + convert_to_pdf(.pdf)
+    Phase 5  保存并预处理 HTML — save_document(.md) + convert_to_pdf（PDF 由前端打印）
 """
 
 import json
@@ -34,6 +34,8 @@ from .tools import (
     execute_tool,
     get_doc_structure,
     get_tools_for_phase,
+    reset_image_output_dir,
+    set_image_output_dir,
     set_source_files,
 )
 
@@ -332,7 +334,7 @@ def _function_tool_calls(tool_calls: Any) -> list[ChatCompletionMessageFunctionT
     ]
 
 
-def _stream_chat_completion(
+async def _stream_chat_completion(
     messages: list[ChatCompletionMessageParam],
     *,
     tools: list[dict[str, Any]] | None,
@@ -354,7 +356,7 @@ def _stream_chat_completion(
         kwargs["tools"] = _chat_tools(tools)
 
     try:
-        stream = client.chat.completions.create(**kwargs)
+        stream = await client.chat.completions.create(**kwargs)
     except Exception as exc:
         _check_terminated(run_id, phase)
         if run_id:
@@ -369,7 +371,7 @@ def _stream_chat_completion(
         if tools:
             fallback_kwargs["tools"] = _chat_tools(tools)
         _check_terminated(run_id, phase)
-        resp = client.chat.completions.create(**fallback_kwargs)
+        resp = await client.chat.completions.create(**fallback_kwargs)
         _check_terminated(run_id, phase)
         msg = resp.choices[0].message
         reasoning = getattr(msg, "reasoning_content", "") or ""
@@ -393,7 +395,7 @@ def _stream_chat_completion(
 
     _register_active_stream(run_id, stream)
     try:
-        for chunk in stream:
+        async for chunk in stream:
             _check_terminated(run_id, phase)
             if not chunk.choices:
                 continue
@@ -600,7 +602,7 @@ def _schema_content_format_rules() -> dict[str, Any]:
 # ============================================================
 # Phase 1: 读取文件
 # ============================================================
-def _phase_read_files(
+async def _phase_read_files(
     doc_type: str,
     user_hint: str = "",
     run_id: Optional[str] = None,
@@ -624,7 +626,7 @@ def _phase_read_files(
         _check_terminated(run_id, "read_files")
         logger.info(f"  [读取阶段 Turn {turn}] 等待 LLM...")
         _record_trace(run_id, "llm_request", phase="read_files", turn=turn, action="读取需求、结构和排版规范")
-        msg_content, tool_calls, reasoning_content = _stream_chat_completion(
+        msg_content, tool_calls, reasoning_content = await _stream_chat_completion(
             messages,
             tools=get_tools_for_phase("read"),
             temperature=0.0,
@@ -769,7 +771,7 @@ def _phase_read_files(
 # ============================================================
 # Phase 2-4: 逐节生成 + 拼接
 # ============================================================
-def _call_llm(
+async def _call_llm(
     system_prompt: str,
     user_prompt: str,
     tools: list[dict[str, Any]] | None = None,
@@ -787,7 +789,7 @@ def _call_llm(
     for turn in range(max_turns):
         _check_terminated(run_id, phase)
         _record_trace(run_id, "llm_request", phase=phase, turn=turn, has_tools=bool(tools))
-        msg_content, tool_calls, reasoning_content = _stream_chat_completion(
+        msg_content, tool_calls, reasoning_content = await _stream_chat_completion(
             msgs,
             tools=tools,
             temperature=0.4,
@@ -883,7 +885,7 @@ def _section_context_excerpt(requirement: str, project_context: str) -> str:
     return "\n\n".join(parts)
 
 
-def _generate_section_group(
+async def _generate_section_group(
     group: dict,
     requirement: str,
     project_context: str,
@@ -921,7 +923,7 @@ def _generate_section_group(
     _record_trace(run_id, "section_started", phase=phase, title=group["title"])
     # 章节生成阶段允许读取项目资料和渲染图表，但不让模型直接保存文档。
     write_tools = [t for t in get_tools_for_phase("write") if t["function"]["name"] != "save_document"]
-    content = _call_llm(
+    content = await _call_llm(
         prompt,
         f"请撰写 {group['title']} 及其所有子章节的完整内容。",
         tools=write_tools,
@@ -1006,7 +1008,7 @@ def _read_direct_generation_context(
     return source_content
 
 
-def _generate_direct_document(
+async def _generate_direct_document(
     doc_type: str,
     user_hint: str,
     source_content: str,
@@ -1036,10 +1038,10 @@ def _generate_direct_document(
         ]
         if part
     )
-    content = _call_llm(system_prompt, user_prompt, tools=tools, run_id=run_id, phase="generate_document")
+    content = await _call_llm(system_prompt, user_prompt, tools=tools, run_id=run_id, phase="generate_document")
     if not content or len(content.strip()) < 20:
         _record_trace(run_id, "section_retry", phase="generate_document", message="直接撰写内容过短，重试")
-        content = _call_llm(system_prompt, user_prompt, tools=tools, run_id=run_id, phase="generate_document")
+        content = await _call_llm(system_prompt, user_prompt, tools=tools, run_id=run_id, phase="generate_document")
 
     _record_trace(run_id, "phase_completed", phase="generate_document", content=content)
     return content
@@ -1051,7 +1053,7 @@ def _ensure_markdown_title(md_text: str, fallback_title: str) -> str:
     return f"# {fallback_title}\n\n{md_text.strip()}\n"
 
 
-def _save_and_convert_document(
+async def _save_and_convert_document(
     final_doc: str,
     doc_type: str,
     user_hint: str,
@@ -1093,22 +1095,19 @@ def _save_and_convert_document(
 
     _check_terminated(run_id, "convert_pdf")
     logger.info("=" * 50)
-    logger.info("Phase 6: 转 PDF")
+    logger.info("Phase 6: 预处理打印 HTML（PDF 由前端浏览器渲染）")
     _record_trace(run_id, "phase_started", phase="convert_pdf", markdown_path=str(md_output_path))
-    pdf_output_path = Path(execute_tool("convert_to_pdf", {"md_path": str(md_output_path)}))
-    logger.info(f"PDF 已保存至: {pdf_output_path}")
+    execute_tool("convert_to_pdf", {"md_path": str(md_output_path)})
     _record_trace(
         run_id,
         "phase_completed",
         phase="convert_pdf",
         markdown_path=str(md_output_path),
-        pdf_path=str(pdf_output_path),
     )
     _set_run_status(
         run_id,
         "completed",
         output_path=str(md_output_path),
-        pdf_path=str(pdf_output_path),
         error=None,
         document_content=final_doc,
     )
@@ -1118,7 +1117,7 @@ def _save_and_convert_document(
 # ============================================================
 # 主入口
 # ============================================================
-def run_agent(
+async def run_agent(
     doc_type: str = "需求规格说明书",
     user_hint: str = "",
     source_file: Optional[str] = None,
@@ -1144,6 +1143,7 @@ def run_agent(
         _check_terminated(run_id, "run")
         resolved_source_files = list(source_files or ([] if source_file is None else [source_file]))
         set_source_files(resolved_source_files)
+        set_image_output_dir(run_id)
         _record_trace(
             run_id,
             "source_files_set",
@@ -1162,14 +1162,14 @@ def run_agent(
                 normalized_mode,
                 run_id,
             )
-            final_doc = _generate_direct_document(
+            final_doc = await _generate_direct_document(
                 doc_type,
                 user_hint,
                 source_content,
                 normalized_mode,
                 run_id,
             )
-            return _save_and_convert_document(
+            return await _save_and_convert_document(
                 final_doc,
                 doc_type,
                 user_hint,
@@ -1182,7 +1182,7 @@ def run_agent(
         logger.info("=" * 50)
         logger.info("Phase 1: 读取文件")
         _record_trace(run_id, "phase_started", phase="read_files", message="读取需求、结构和排版规范")
-        requirement, _schema_text, layout, project_context = _phase_read_files(
+        requirement, _schema_text, layout, project_context = await _phase_read_files(
             doc_type,
             user_hint=user_hint,
             run_id=run_id,
@@ -1214,7 +1214,7 @@ def run_agent(
             prev_title = top_sections[i - 1]["title"] if i > 0 else ""
             next_title = top_sections[i + 1]["title"] if i + 1 < len(top_sections) else ""
 
-            content = _generate_section_group(
+            content = await _generate_section_group(
                 group, requirement, project_context, layout, doc_type,
                 user_hint, prev_title, next_title, run_id=run_id,
             )
@@ -1222,7 +1222,7 @@ def run_agent(
             if not content or len(content.strip()) < 100:  # 简单校验：内容太短则重试一次
                 logger.warning(f"  章节 {group['title']} 生成内容过短，重试...")
                 _record_trace(run_id, "section_retry", phase="generate_sections", title=group["title"])
-                content = _generate_section_group(
+                content = await _generate_section_group(
                     group, requirement, project_context, layout, doc_type,
                     user_hint, prev_title, next_title, run_id=run_id,
                 )
@@ -1260,7 +1260,7 @@ def run_agent(
                             if _section_contains(sec, group):
                                 prev_title = top_sections[j - 1]["title"] if j > 0 else ""
                                 next_title = top_sections[j + 1]["title"] if j + 1 < len(top_sections) else ""
-                                content = _generate_section_group(
+                                content = await _generate_section_group(
                                     group, requirement, project_context, layout, doc_type,
                                     user_hint, prev_title, next_title, run_id=run_id,
                                 )
@@ -1302,7 +1302,7 @@ def run_agent(
             deterministic=True,
         )
 
-        return _save_and_convert_document(final_doc, doc_type, user_hint, run_id)
+        return await _save_and_convert_document(final_doc, doc_type, user_hint, run_id)
     except GenerationTerminated:
         logger.info(f"文档生成被终止: {run_id}")
         _set_run_status(run_id, "terminated")
@@ -1311,6 +1311,8 @@ def run_agent(
         _set_run_status(run_id, "failed", error=str(exc))
         _record_trace(run_id, "error", phase="run", error=str(exc))
         raise
+    finally:
+        reset_image_output_dir()
 
 
 # ============================================================
