@@ -146,7 +146,7 @@
             <SvgIcon type="mdi" :path="mdiFilePdfBox" class="preview-file-icon" />
             <div>
               <span>PDF</span>
-              <strong>{{ basename(selectedRun.pdf_path) || '待生成' }}</strong>
+              <strong>{{ pdfPreviewFileName }}</strong>
             </div>
           </div>
           <div class="preview-file-actions">
@@ -268,6 +268,7 @@ const {
   isPreviewLoading,
   previewError,
   imageDownloadMenuOpen,
+  pdfPreviewFileName,
   previewFileTitle,
   previewMarkdownHtml,
   previewImagePaths,

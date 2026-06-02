@@ -4,6 +4,10 @@
 
 接口由 `server/docgen_agent/api.py` 提供。文档生成智能体按任务模型工作，对外使用 `task_id`，数据库表模型为 `DocgenTask`。任务控制只支持协作式终止，不支持中途追加提示词或暂停。
 
+**并发支持**: 多任务可并发执行。状态通过 ContextVar 隔离。同步阻塞操作（文件 I/O、DB 写入）通过 `asyncio.to_thread` 在线程池中执行，不阻塞事件循环。
+
+**启动清理**: 服务启动时 (`lifespan`) 会自动将数据库中状态为 `running` / `terminate_requested` 的残留任务标记为 `terminated`，错误信息 `"服务端已退出，任务被终止"`。这确保前端不会在服务重启后永远轮询已死亡的任务。
+
 ## 文档类型
 
 `doc_type` 仅支持：
@@ -108,10 +112,11 @@
 
 | 状态 | 说明 |
 |---|---|
-| `running` | 正在生成 |
+| `running` | 正在生成（当前进程存活） |
 | `completed` | 已完成，`output_path` 为 Markdown，`pdf_path` 为 PDF |
 | `failed` | 失败，查看 `error` |
-| `terminate_requested` / `terminated` | 已请求/已完成终止 |
+| `terminate_requested` | 已请求终止，工作流将在下一个检查点停止 |
+| `terminated` | 已终止。可能是用户主动终止，也可能是服务端重启后启动清理逻辑标记（`error: "服务端已退出，任务被终止"`） |
 
 常见事件类型：`run_started`、`phase_started`、`phase_completed`、`llm_request`、`reasoning`、`assistant_message`、`tool_call`、`tool_result`、`section_started`、`section_completed`、`document_stitched`、`format_repaired`、`terminate_requested`、`terminated`、`error`。
 
@@ -172,7 +177,7 @@
 |---|---|
 | `400` | 上传文件类型不支持，或下载路径不在 `output_docs/` 内 |
 | `404` | `task_id` 不存在，文件不存在，或 PDF 尚未生成 |
-| `409` | 文档尚未生成完成，或任务不在当前进程中运行无法终止 |
+| `409` | 文档尚未生成完成；或任务不在当前进程中运行（服务已重启），无法终止 |
 | `500` | 文档生成或底层工具执行失败 |
 
 ## curl 示例

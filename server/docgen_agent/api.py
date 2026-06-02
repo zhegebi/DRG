@@ -49,6 +49,76 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_EXTENSIONS = {".txt", ".md"}
 _TERMINAL_STATUSES = {"completed", "failed", "terminated"}
 
+# 上次进程残留的运行中状态
+_STALE_RUN_STATUSES = {"running", "terminate_requested"}
+_STALE_TERMINATION_ERROR = "服务端已退出，任务被终止"
+
+
+def terminate_stale_tasks_on_startup() -> int:
+    """在服务启动时，将上次进程残留的「运行中」任务全部标记为终止。
+
+    进程退出时 in-memory trace 会丢失；若不清理这些 DB 记录，前端会永远轮询它们。
+    返回清理的任务数。
+    """
+    try:
+        import server.db
+    except Exception:
+        return 0
+
+    engine = getattr(server.db, "sync_engine", None)
+    if engine is None:
+        return 0
+
+    from datetime import datetime
+    from sqlmodel import Session, select
+
+    from .table import DocgenTask
+
+    terminated_count = 0
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    try:
+        with Session(engine) as session:
+            stmt = select(DocgenTask).where(DocgenTask.status.in_(_STALE_RUN_STATUSES))
+            stale_tasks: list[DocgenTask] = list(session.exec(stmt).all())
+
+            for row in stale_tasks:
+                row.status = "terminated"
+                row.error = _STALE_TERMINATION_ERROR
+                row.updated_at = datetime.now()
+
+                # 在 trace 中追加服务退出事件
+                trace: dict = row.trace if isinstance(row.trace, dict) else {}
+                if trace:
+                    events = trace.setdefault("events", [])
+                    next_id = len(events) + 1
+                    events.append({
+                        "id": next_id,
+                        "time": now_iso,
+                        "type": "terminated",
+                        "phase": "run",
+                        "error": _STALE_TERMINATION_ERROR,
+                    })
+                    trace["status"] = "terminated"
+                    trace["error"] = _STALE_TERMINATION_ERROR
+                    trace["updated_at"] = now_iso
+                    row.trace = trace
+
+                session.add(row)
+                terminated_count += 1
+                logger.warning(
+                    f"发现残留运行中任务 {row.task_id}（{row.doc_type}），"
+                    f"已标记为终止: {_STALE_TERMINATION_ERROR}"
+                )
+
+            if terminated_count:
+                session.commit()
+                logger.info(f"启动清理完成：共终止 {terminated_count} 个残留任务")
+    except Exception as exc:
+        logger.exception(f"启动清理残留任务失败: {exc}")
+
+    return terminated_count
+
 
 class StartDocgenTaskResponse(BaseModel):
     status: str
@@ -56,6 +126,7 @@ class StartDocgenTaskResponse(BaseModel):
     doc_type: str
     task_title: str = ""
     generation_mode: str = DEFAULT_GENERATION_MODE
+    serch_web: bool = False
 
 
 class DocgenTaskStatusResponse(BaseModel):
@@ -69,6 +140,7 @@ class DocgenTaskTraceResponse(BaseModel):
     doc_type: str = ""
     task_title: str = ""
     generation_mode: str = DEFAULT_GENERATION_MODE
+    serch_web: bool = False
     document_id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -107,6 +179,7 @@ def _normalize_trace_payload(
             payload["error"] = row.error
     payload["terminated"] = payload.get("status") in {"terminate_requested", "terminated"}
     payload["generation_mode"] = normalize_generation_mode(str(payload.get("generation_mode") or DEFAULT_GENERATION_MODE))
+    payload["serch_web"] = bool(payload.get("serch_web", False))
     payload.setdefault("events", [])
     return payload
 
@@ -120,6 +193,7 @@ def _trace_payload_from_db(row: DocgenTask) -> dict[str, Any]:
             "doc_type": row.doc_type,
             "task_title": row.name,
             "generation_mode": trace.get("generation_mode", DEFAULT_GENERATION_MODE),
+            "serch_web": bool(trace.get("serch_web", False)),
             "document_id": row.document_id,
             "created_at": row.created_at.isoformat(timespec="seconds"),
             "updated_at": row.updated_at.isoformat(timespec="seconds"),
@@ -313,21 +387,25 @@ def _fallback_task_title(doc_type: str, prompt: str, source_paths: list[str]) ->
 
 async def _generate_task_title(doc_type: str, prompt: str, source_paths: list[str]) -> str:
     fallback = _fallback_task_title(doc_type, prompt, source_paths)
+    # 生成标题不应阻塞请求响应：带超时兜底，超时/失败时使用快速规则标题。
     try:
         file_names = "、".join(Path(path).name for path in source_paths[:3]) or "无"
-        resp = await client.chat.completions.create(
-            model="deepseek-v4-pro",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是任务命名助手。为文档生成任务生成一个中文短标题，只输出标题本身，不要解释，不要标点，尽量不超过10个汉字。",
-                },
-                {
-                    "role": "user",
-                    "content": f"文档类型：{doc_type}\n用户提示：{prompt[:300] or '无'}\n上传文件：{file_names}",
-                },
-            ],
-            temperature=0.2,
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="deepseek-v4-pro",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是任务命名助手。为文档生成任务生成一个中文短标题，只输出标题本身，不要解释，不要标点，尽量不超过10个汉字。",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"文档类型：{doc_type}\n用户提示：{prompt[:300] or '无'}\n上传文件：{file_names}",
+                    },
+                ],
+                temperature=0.2,
+            ),
+            timeout=8.0,
         )
         title = _display_title(resp.choices[0].message.content or "")
         return title or fallback
@@ -418,7 +496,7 @@ def _markdown_package_response(md_path: Path) -> StreamingResponse:
     return _document_package_response(md_path, md_path)
 
 
-def _save_one_uploaded_source_file(source_file: UploadFile) -> str:
+async def _save_one_uploaded_source_file(source_file: UploadFile) -> str:
     original_name = Path(source_file.filename or "uploaded.md").name
     ext = Path(original_name).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -429,22 +507,26 @@ def _save_one_uploaded_source_file(source_file: UploadFile) -> str:
 
     safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{original_name}"
     dest = UPLOAD_DIR / safe_name
-    with open(dest, "wb") as f:
-        shutil.copyfileobj(source_file.file, f)
+
+    def _write():
+        with open(dest, "wb") as f:
+            shutil.copyfileobj(source_file.file, f)
+
+    await asyncio.to_thread(_write)
     logger.info(f"收到上传文件: {dest}")
     return str(dest)
 
 
-def _save_uploaded_source_files(
+async def _save_uploaded_source_files(
     source_file: Optional[UploadFile] = None,
     source_files: Optional[list[UploadFile]] = None,
 ) -> list[str]:
     saved: list[str] = []
     if source_file is not None and source_file.filename:
-        saved.append(_save_one_uploaded_source_file(source_file))
+        saved.append(await _save_one_uploaded_source_file(source_file))
     for file in source_files or []:
         if file is not None and file.filename:
-            saved.append(_save_one_uploaded_source_file(file))
+            saved.append(await _save_one_uploaded_source_file(file))
     return saved
 
 
@@ -454,6 +536,7 @@ async def _run_agent_background(
     prompt: str,
     source_paths: list[str],
     generation_mode: GenerationMode = DEFAULT_GENERATION_MODE,
+    serch_web: bool = False,
 ) -> None:
     try:
         await run_agent(
@@ -462,13 +545,14 @@ async def _run_agent_background(
             source_files=source_paths,
             run_id=task_id,
             generation_mode=generation_mode,
+            serch_web=serch_web,
         )
     except GenerationTerminated:
         logger.info(f"后台文档生成已终止: {task_id}")
     except Exception as e:
         logger.exception(f"后台文档生成失败: {task_id}: {e}")
     finally:
-        _persist_trace_sync(task_id)
+        await asyncio.to_thread(_persist_trace_sync, task_id)
 
 
 @router.post("/task/create", response_model=StartDocgenTaskResponse)
@@ -477,6 +561,7 @@ async def create_task(
     prompt: str = Form(default="", description="前端用户的提示词"),
     doc_type: DocType = Form(default="需求规格说明书", description="目标文档类型"),
     generation_mode: GenerationMode = Form(default=DEFAULT_GENERATION_MODE, description="生成模式"),
+    serch_web: bool = Form(default=False, description="是否允许联网搜索"),
     source_file: Optional[UploadFile] = File(default=None, description="需求文件（txt/md），兼容旧字段"),
     source_files: Optional[list[UploadFile]] = File(default=None, description="需求/依赖文件列表（txt/md）"),
     task_id: Optional[str] = Form(default=None, description="任务 ID；不传则后端生成"),
@@ -484,7 +569,7 @@ async def create_task(
     db_client: AsyncSession = Depends(get_async_session),
 ) -> StartDocgenTaskResponse:
     """创建后台文档生成任务，立即返回 task_id。"""
-    source_paths = _save_uploaded_source_files(source_file, source_files)
+    source_paths = await _save_uploaded_source_files(source_file, source_files)
     task_id = task_id or uuid.uuid4().hex
     task_title = await _generate_task_title(doc_type, prompt, source_paths)
     assert current_user.id is not None, "current_user.id is None"
@@ -495,6 +580,7 @@ async def create_task(
         user_hint=prompt,
         task_title=task_title,
         generation_mode=generation_mode,
+        serch_web=serch_web,
         reset=True,
     )
     await _create_docgen_task_record(
@@ -507,13 +593,14 @@ async def create_task(
         task_title=task_title,
         initial_trace=initial_trace,
     )
-    background_tasks.add_task(_run_agent_background, task_id, doc_type, prompt, source_paths, generation_mode)
+    background_tasks.add_task(_run_agent_background, task_id, doc_type, prompt, source_paths, generation_mode, serch_web)
     return StartDocgenTaskResponse(
         status="started",
         task_id=task_id,
         doc_type=doc_type,
         task_title=task_title,
         generation_mode=generation_mode,
+        serch_web=serch_web,
     )
 
 
@@ -659,7 +746,7 @@ async def get_task_html(
             path = _safe_output_path(str(candidate))
         else:
             raise HTTPException(status_code=404, detail="未找到 Markdown 文件，无法生成打印 HTML")
-    html = build_document_html(str(path))
+    html = await asyncio.to_thread(build_document_html, str(path))
     return Response(content=html, media_type="text/html; charset=utf-8")
 
 

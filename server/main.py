@@ -14,6 +14,9 @@ from .user.api import router as auth_router
 async def lifespan(app: FastAPI):
     init_db()
     init_assets()
+    # 清理上次进程残留的运行中状态（服务端死亡后前端不应继续轮询）
+    from .docgen_agent.api import terminate_stale_tasks_on_startup
+    terminate_stale_tasks_on_startup()
     yield
     # nothing to clean up on shutdown for now
 

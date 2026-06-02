@@ -3,17 +3,17 @@
 ## 架构概览
 
 ```
-┌──────────────────────────────────────────────────────┐
-│ workflow.py (主循环)                                  │
-│                                                       │
-│  Phase 1: 读取文件  → LLM 调用 read_* 工具            │
-│  Phase 2: 拆解章节  → flatten_sections()              │
-│  Phase 3: 逐节生成  → LLM 调用 render_*/search_web    │
-│  Phase 3.5: Schema校验 → 缺失章节重生成                │
-│  Phase 4: 拼接校验  → LLM 审校全文 + 封面小组信息      │
-│  Phase 5: 保存 MD   → save_document + 列表修正安全网   │
-│  Phase 6: 预处理 HTML → convert_to_pdf                  │
-└──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ workflow.py (主循环)                                              │
+│                                                                   │
+│  Phase 1: 读取文件  → LLM 调用 read_* 工具 (asyncio.gather 并行) │
+│  Phase 2: 拆解章节  → flatten_sections()                          │
+│  Phase 3: 逐节生成  → LLM 调用 render_*/search_web                │
+│  Phase 3.5: Schema校验 → 缺失章节重生成                            │
+│  Phase 4: 拼接校验  → asyncio.to_thread(规范化)                    │
+│  Phase 5: 保存 MD   → asyncio.to_thread(格式化+保存)               │
+│  Phase 6: 预处理 HTML → asyncio.to_thread(build_document_html)     │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 工具按阶段分配（`get_tools_for_phase`）：
@@ -23,17 +23,41 @@
 | `read` | read_requirement, read_output_schema, read_output_layout, search_web, 9 个细粒度项目分析工具 + 2 个聚合上下文工具 |
 | `write` | search_web, render_mermaid, render_plantuml, save_document |
 
+## 工具异步执行模型
+
+所有工具通过 `execute_tool_async()` 统一调度：
+
+```python
+async def execute_tool_async(name, arguments):
+    handler = _TOOL_HANDLERS.get(name)
+    if asyncio.iscoroutinefunction(handler):
+        return await handler(arguments)           # 异步工具: 原生 await
+    return await asyncio.to_thread(handler, arguments)  # 同步工具: 线程池
+```
+
+| 工具类型 | 示例 | 执行位置 |
+|---------|------|---------|
+| 异步 | `search_web` (httpx.AsyncClient) | 事件循环 |
+| 同步 — 纯内存 | `read_requirement` (ContextVar), `read_output_schema` (JSON) | 线程池（轻量，几乎无开销） |
+| 同步 — 文件 I/O | `list_project_files`, `read_project_file`, `save_document` | 线程池 |
+| 同步 — HTTP | `render_mermaid` (requests.get), `render_plantuml` (requests.get) | 线程池 |
+| 同步 — 计算密集 | `build_document_html` (正则+Markdown→HTML+base64), 文档规范化 | 线程池 |
+
+**关键原则**: 同步阻塞操作必须通过 `asyncio.to_thread()` 移出事件循环线程，避免冻结所有并发协程。详见 [ASYNC_CONCURRENCY.md](./ASYNC_CONCURRENCY.md)。
+
 ## LLM 对话循环 (`_call_llm`)
 
 ```
-client.chat.completions.create(tools=..., messages=...)
-  → LLM 返回 text + tool_calls[]
-    → execute_tool(name, arguments) 通过静态 _TOOL_HANDLERS 分发
-      → 追加 tool 消息到 messages
-        → 继续下一轮（最多 15 轮）
+client.chat.completions.create(stream=True, tools=..., messages=...)
+  → async for chunk in stream:                    ← 事件循环中异步流式读取
+    → 累积 reasoning/content/tool_call delta      ← 每个 chunk 检查 _check_terminated()
+      → 若有 tool_calls:
+        → asyncio.gather(*(execute_tool_async()))  ← 并行执行所有工具
+          → 追加 tool 消息到 messages
+            → 继续下一轮（最多 15 轮）
 ```
 
-每轮调用前后检查中断/终止标志。
+每轮调用前后检查中断/终止标志。工具调用通过 `asyncio.gather` 并行执行——当 LLM 在一次响应中返回多个 tool_call 时，所有工具同时启动。
 
 ---
 
@@ -243,19 +267,30 @@ def _resolve_project_path(path):
 
 ## 八、关键函数索引
 
-| 函数 | 文件:行 | 作用 |
-|------|---------|------|
-| `_render_mermaid_to_file` | tools.py:799 | Mermaid → mermaid.ink → PNG |
-| `_render_plantuml_to_file` | tools.py:830 | PlantUML → plantuml.com → PNG |
-| `_render_diagram_blocks_for_html` | tools.py:875 | `mermaid/plantuml 代码块 → base64 <img>` |
-| `_embed_images_as_base64` | tools.py:1482 | 本地图片 → data URI |
-| `_center_captions` | tools.py:1337 | 图/表标题居中 |
-| `_center_bare_images` | tools.py:1386 | 裸 `<img>` 段落居中 |
-| `_format_title_html` | tools.py:1305 | 标题页 + 封面小组信息 |
-| `_layout_css` | tools.py:920 | JSON → 打印 CSS |
-| `_clean_boilerplate` | tools.py:1141 | 清除客套话 |
-| `_fix_unordered_lists_in_md` | tools.py:1148 | `- ` → `(N) ` |
-| `_validate_table_captions` | tools.py:1186 | 补缺失表头 |
-| `_flatten_required_sections` | workflow.py:624 | 展平 schema 必需章节 |
-| `_generate_section_group` | workflow.py:580 | LLM 生成单个章节组 |
-| `convert_to_pdf` | tools.py:2672 | MD → HTML 预处理（PDF 由前端打印） |
+| 函数 | 文件:行 | 作用 | 执行模式 |
+|------|---------|------|---------|
+| `execute_tool_async` | tools.py:725 | 统一工具调度：async→await，sync→to_thread | 事件循环 + 线程池 |
+| `_stream_chat_completion` | workflow.py:344 | 流式 LLM 调用 + trace 实时推送 | 事件循环 (async for) |
+| `_call_llm` | workflow.py:793 | LLM 对话循环 (max 15 turns) | 事件循环 |
+| `_phase_read_files` | workflow.py:643 | Phase 1: 读取需求/结构/布局/项目上下文 | 事件循环 + asyncio.gather |
+| `_generate_section_group` | workflow.py:899 | Phase 3: LLM 生成单个章节组 | 事件循环 |
+| `_save_and_convert_document` | workflow.py:1068 | Phase 5-6: 格式化→保存→HTML | 线程池 (to_thread) |
+| `_render_mermaid_to_file` | tools.py:1255 | Mermaid → mermaid.ink → PNG | 线程池 (via to_thread) |
+| `_render_plantuml_to_file` | tools.py:1298 | PlantUML → plantuml.com → PNG | 线程池 (via to_thread) |
+| `_render_diagram_blocks_for_html` | tools.py:1341 | mermaid/plantuml 代码块 → base64 img | 线程池 (via to_thread) |
+| `_embed_images_as_base64` | tools.py:2847 | 本地图片 → data URI | 线程池 (via to_thread) |
+| `_center_captions` | tools.py:2650 | 图/表标题居中 | 线程池 (via to_thread) |
+| `_center_bare_images` | tools.py:2733 | 裸 img 段落居中 | 线程池 (via to_thread) |
+| `_format_title_html` | tools.py:2620 | 标题页 + 封面小组信息 | 线程池 (via to_thread) |
+| `_layout_css` | tools.py:1374 | JSON → 打印 CSS | 线程池 (via to_thread) |
+| `_clean_boilerplate` | tools.py:1639 | 清除客套话 | 线程池 (via to_thread) |
+| `_fix_unordered_lists_in_md` | tools.py:1648 | `- ` → `(N) ` | 线程池 (via to_thread) |
+| `_validate_table_captions` | tools.py:2351 | 补缺失表头 | 线程池 (via to_thread) |
+| `normalize_caption_positions_and_numbering` | tools.py:1909 | 图表 caption 按章重编号 | 线程池 (via to_thread) |
+| `normalize_heading_numbering` | tools.py:2143 | 标题编号规范化 | 线程池 (via to_thread) |
+| `normalize_document_header` | tools.py:2564 | 文档 H1 + 封面信息标准化 | 线程池 (via to_thread) |
+| `convert_to_pdf` | tools.py:2826 | MD → HTML 预处理（PDF 由前端打印） | 线程池 (via to_thread) |
+| `_check_terminated` | workflow.py:483 | 终止标志检查点 (27 处) | 事件循环 |
+| `request_generation_terminate` | workflow.py:192 | 设置终止标志 + 关闭 LLM 流 | 事件循环 |
+| `terminate_stale_tasks_on_startup` | api.py:57 | 启动时清理残留 running 任务 | 事件循环 (lifespan) |
+| `_persist_trace_sync` | api.py:279 | trace 写 DB | 线程池 (via to_thread) |

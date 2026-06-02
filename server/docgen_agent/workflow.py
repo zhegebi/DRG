@@ -8,6 +8,7 @@
     Phase 5  保存并预处理 HTML — save_document(.md) + convert_to_pdf（PDF 由前端打印）
 """
 
+import asyncio
 import json
 import threading
 from datetime import datetime
@@ -31,7 +32,7 @@ from .tools import (
     client,
     OUTPUT_DIR,
     OUTPUT_SCHEMA_PATH,
-    execute_tool,
+    execute_tool_async,
     get_doc_structure,
     get_tools_for_phase,
     reset_image_output_dir,
@@ -92,6 +93,7 @@ def _ensure_run_state_locked(run_id: str) -> dict[str, Any]:
             "status": "running",
             "doc_type": "",
             "task_title": "文档生成任务",
+            "serch_web": False,
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
             "output_path": None,
@@ -116,6 +118,7 @@ def start_generation_trace(
     user_hint: str = "",
     task_title: str = "",
     generation_mode: str = DEFAULT_GENERATION_MODE,
+    serch_web: bool = False,
     *,
     reset: bool = False,
 ) -> dict[str, Any]:
@@ -130,6 +133,7 @@ def start_generation_trace(
                 "doc_type": doc_type,
                 "task_title": task_title or doc_type or "文档生成任务",
                 "generation_mode": normalize_generation_mode(generation_mode),
+                "serch_web": bool(serch_web),
                 "created_at": _now_iso(),
                 "updated_at": _now_iso(),
                 "output_path": None,
@@ -145,6 +149,7 @@ def start_generation_trace(
             if task_title:
                 state["task_title"] = task_title
             state["generation_mode"] = normalize_generation_mode(generation_mode or state.get("generation_mode"))
+            state["serch_web"] = bool(serch_web)
             state["updated_at"] = _now_iso()
 
     _record_trace(
@@ -153,6 +158,7 @@ def start_generation_trace(
         phase="run",
         doc_type=doc_type,
         generation_mode=normalize_generation_mode(generation_mode),
+        serch_web=bool(serch_web),
         user_hint=user_hint,
     )
     trace = get_generation_trace(run_id)
@@ -171,6 +177,7 @@ def get_generation_trace(run_id: str) -> dict[str, Any] | None:
             "doc_type": state.get("doc_type", ""),
             "task_title": state.get("task_title") or state.get("doc_type", ""),
             "generation_mode": state.get("generation_mode", DEFAULT_GENERATION_MODE),
+            "serch_web": bool(state.get("serch_web", False)),
             "created_at": state.get("created_at"),
             "updated_at": state.get("updated_at"),
             "output_path": state.get("output_path"),
@@ -484,6 +491,37 @@ def _check_terminated(run_id: Optional[str], phase: str = "") -> None:
         raise GenerationTerminated(f"文档生成已终止: {run_id}")
 
 
+async def _execute_traced_tool(
+    run_id: Optional[str],
+    phase: str,
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    tool_call_id: str | None = None,
+    **trace_payload: Any,
+) -> str:
+    _check_terminated(run_id, phase)
+    event_payload = {
+        "name": name,
+        "arguments": arguments,
+        **trace_payload,
+    }
+    if tool_call_id:
+        event_payload["tool_call_id"] = tool_call_id
+    _record_trace(run_id, "tool_call", phase=phase, **event_payload)
+    result = await execute_tool_async(name, arguments)
+    result_payload = {
+        "name": name,
+        "result": result,
+        **trace_payload,
+    }
+    if tool_call_id:
+        result_payload["tool_call_id"] = tool_call_id
+    _record_trace(run_id, "tool_result", phase=phase, **result_payload)
+    _check_terminated(run_id, phase)
+    return result
+
+
 # ============================================================
 # 提示词模板
 # ============================================================
@@ -606,6 +644,7 @@ async def _phase_read_files(
     doc_type: str,
     user_hint: str = "",
     run_id: Optional[str] = None,
+    serch_web: bool = False,
 ) -> tuple[str, str, str, str]:
     """Agent 方式读取 requirement, schema, layout 和项目上下文。"""
     read_user_prompt = f"请读取生成 {doc_type} 所需的所有文件。"
@@ -628,7 +667,7 @@ async def _phase_read_files(
         _record_trace(run_id, "llm_request", phase="read_files", turn=turn, action="读取需求、结构和排版规范")
         msg_content, tool_calls, reasoning_content = await _stream_chat_completion(
             messages,
-            tools=get_tools_for_phase("read"),
+            tools=get_tools_for_phase("read", serch_web=serch_web),
             temperature=0.0,
             run_id=run_id,
             phase="read_files",
@@ -649,29 +688,22 @@ async def _phase_read_files(
                 assistant_msg["reasoning_content"] = reasoning_content
             messages.append(_chat_message(assistant_msg))
 
-            for tc in tool_calls:
-                _check_terminated(run_id, "read_files")
+            async def _execute_read_tool(tc: dict[str, Any]) -> tuple[str, str, dict[str, Any], str]:
                 func_name = tc["function"]["name"]
                 tool_call_id = tc["id"]
                 func_args = _safe_json_loads(tc["function"].get("arguments", ""))
-                _record_trace(
+                result = await _execute_traced_tool(
                     run_id,
-                    "tool_call",
-                    phase="read_files",
+                    "read_files",
+                    func_name,
+                    func_args,
                     tool_call_id=tool_call_id,
-                    name=func_name,
-                    arguments=func_args,
                 )
-                result = execute_tool(func_name, func_args)
-                _record_trace(
-                    run_id,
-                    "tool_result",
-                    phase="read_files",
-                    tool_call_id=tool_call_id,
-                    name=func_name,
-                    result=result,
-                )
-                _check_terminated(run_id, "read_files")
+                return func_name, tool_call_id, func_args, result
+
+            tool_results = await asyncio.gather(*(_execute_read_tool(tc) for tc in tool_calls))
+
+            for func_name, tool_call_id, _func_args, result in tool_results:
                 messages.append(_chat_message({
                     "role": "tool", "tool_call_id": tool_call_id, "content": result,
                 }))
@@ -710,25 +742,22 @@ async def _phase_read_files(
     if not layout:
         fallback_calls.append(("read_output_layout", {}))
 
-    for func_name, func_args in fallback_calls:
+    async def _execute_fallback_tool(func_name: str, func_args: dict[str, Any]) -> tuple[str, str]:
         logger.warning(f"  [读取阶段] LLM 未返回 {func_name}，使用工具兜底读取")
-        _record_trace(
+        result = await _execute_traced_tool(
             run_id,
-            "tool_call",
-            phase="read_files",
-            name=func_name,
-            arguments=func_args,
+            "read_files",
+            func_name,
+            func_args,
             fallback=True,
         )
-        result = execute_tool(func_name, func_args)
-        _record_trace(
-            run_id,
-            "tool_result",
-            phase="read_files",
-            name=func_name,
-            result=result,
-            fallback=True,
-        )
+        return func_name, result
+
+    fallback_results = await asyncio.gather(
+        *(_execute_fallback_tool(func_name, func_args) for func_name, func_args in fallback_calls)
+    )
+
+    for func_name, result in fallback_results:
         if func_name == "read_requirement":
             requirement = result
         elif func_name == "read_output_schema":
@@ -739,24 +768,14 @@ async def _phase_read_files(
     context_tool = _project_context_tool_for_doc_type(doc_type)
     if context_tool and not project_context_chunks:
         logger.warning(f"  [读取阶段] 未获得项目上下文，使用 {context_tool} 兜底读取")
-        _record_trace(
+        result = await _execute_traced_tool(
             run_id,
-            "tool_call",
-            phase="read_files",
-            name=context_tool,
-            arguments={},
+            "read_files",
+            context_tool,
+            {},
             fallback=True,
         )
-        result = execute_tool(context_tool, {})
         _append_project_context(project_context_chunks, context_tool, result)
-        _record_trace(
-            run_id,
-            "tool_result",
-            phase="read_files",
-            name=context_tool,
-            result=result,
-            fallback=True,
-        )
 
     if not read_completed and requirement and schema and layout:
         _record_trace(run_id, "phase_completed", phase="read_files", message="读取阶段已完成")
@@ -800,7 +819,6 @@ async def _call_llm(
         _check_terminated(run_id, phase)
 
         if tool_calls:
-            # 处理工具调用
             for idx, tc in enumerate(tool_calls):
                 if not tc.get("id"):
                     tc["id"] = f"tool_{turn}_{idx}_{tc['function']['name']}"
@@ -816,29 +834,22 @@ async def _call_llm(
                 tools=[tc["function"]["name"] for tc in tool_calls],
             )
 
-            for tc in tool_calls:
-                _check_terminated(run_id, phase)
+            async def _execute_model_tool(tc: dict[str, Any]) -> tuple[str, str]:
                 func_name = tc["function"]["name"]
                 tool_call_id = tc["id"]
                 func_args = _safe_json_loads(tc["function"].get("arguments", ""))
-                _record_trace(
+                result = await _execute_traced_tool(
                     run_id,
-                    "tool_call",
-                    phase=phase,
+                    phase,
+                    func_name,
+                    func_args,
                     tool_call_id=tool_call_id,
-                    name=func_name,
-                    arguments=func_args,
                 )
-                result = execute_tool(func_name, func_args)
-                _record_trace(
-                    run_id,
-                    "tool_result",
-                    phase=phase,
-                    tool_call_id=tool_call_id,
-                    name=func_name,
-                    result=result,
-                )
-                _check_terminated(run_id, phase)
+                return tool_call_id, result
+
+            tool_results = await asyncio.gather(*(_execute_model_tool(tc) for tc in tool_calls))
+
+            for tool_call_id, result in tool_results:
                 msgs.append(_chat_message({
                     "role": "tool", "tool_call_id": tool_call_id, "content": result,
                 }))
@@ -895,6 +906,7 @@ async def _generate_section_group(
     prev_title: str,
     next_title: str,
     run_id: Optional[str] = None,
+    serch_web: bool = False,
 ) -> str:
     """为一个一级章节组（含所有子节）生成完整内容。"""
     context_label = "前后章节（保证连贯性）"
@@ -922,7 +934,10 @@ async def _generate_section_group(
     logger.info(f"  生成章节组: {group['title']}")
     _record_trace(run_id, "section_started", phase=phase, title=group["title"])
     # 章节生成阶段允许读取项目资料和渲染图表，但不让模型直接保存文档。
-    write_tools = [t for t in get_tools_for_phase("write") if t["function"]["name"] != "save_document"]
+    write_tools = [
+        t for t in get_tools_for_phase("write", serch_web=serch_web)
+        if t["function"]["name"] != "save_document"
+    ]
     content = await _call_llm(
         prompt,
         f"请撰写 {group['title']} 及其所有子章节的完整内容。",
@@ -975,14 +990,11 @@ def _section_contains(sub_sec: dict, group: dict) -> bool:
     return False
 
 
-def _trace_tool_result(run_id: Optional[str], phase: str, name: str, arguments: dict[str, Any]) -> str:
-    _record_trace(run_id, "tool_call", phase=phase, name=name, arguments=arguments, direct=True)
-    result = execute_tool(name, arguments)
-    _record_trace(run_id, "tool_result", phase=phase, name=name, result=result, direct=True)
-    return result
+async def _trace_tool_result(run_id: Optional[str], phase: str, name: str, arguments: dict[str, Any]) -> str:
+    return await _execute_traced_tool(run_id, phase, name, arguments, direct=True)
 
 
-def _read_direct_generation_context(
+async def _read_direct_generation_context(
     source_paths: list[str],
     generation_mode: GenerationMode,
     run_id: Optional[str],
@@ -996,7 +1008,7 @@ def _read_direct_generation_context(
         generation_mode=generation_mode,
     )
 
-    source_content = _trace_tool_result(run_id, "read_files", "read_requirement", {}) if source_paths else ""
+    source_content = await _trace_tool_result(run_id, "read_files", "read_requirement", {}) if source_paths else ""
 
     _record_trace(
         run_id,
@@ -1068,20 +1080,27 @@ async def _save_and_convert_document(
     _record_trace(run_id, "phase_started", phase="save")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{doc_type}{file_name_suffix}_{ts}.md"
-    if enforce_doc_type_header:
-        final_doc = normalize_document_header(final_doc, doc_type, user_hint)
-    else:
-        final_doc = _ensure_markdown_title(final_doc, doc_type or "文档生成结果")
-    final_doc = normalize_heading_numbering(final_doc)
-    final_doc = _fix_unordered_lists_in_md(final_doc)
-    final_doc = normalize_inline_section_titles(final_doc)
-    final_doc, caption_issues = normalize_caption_positions_and_numbering(final_doc)
-    final_doc, table_issues = _validate_table_captions(final_doc)
-    final_doc, caption_issues_after_table_repair = normalize_caption_positions_and_numbering(final_doc)
+    # 将所有同步字符串规范化操作放入线程池，避免阻塞事件循环
+    def _normalize_document(doc: str) -> tuple[str, list[str], list[str], list[str]]:
+        if enforce_doc_type_header:
+            doc = normalize_document_header(doc, doc_type, user_hint)
+        else:
+            doc = _ensure_markdown_title(doc, doc_type or "文档生成结果")
+        doc = normalize_heading_numbering(doc)
+        doc = _fix_unordered_lists_in_md(doc)
+        doc = normalize_inline_section_titles(doc)
+        doc, caption_issues = normalize_caption_positions_and_numbering(doc)
+        doc, table_issues = _validate_table_captions(doc)
+        doc, caption_issues_after = normalize_caption_positions_and_numbering(doc)
+        return doc, caption_issues, table_issues, caption_issues_after
+
+    final_doc, caption_issues, table_issues, caption_issues_after_table_repair = (
+        await asyncio.to_thread(_normalize_document, final_doc)
+    )
     for issue in [*caption_issues, *table_issues, *caption_issues_after_table_repair]:
         logger.warning(f"  格式修复: {issue}")
         _record_trace(run_id, "format_repaired", phase="save", message=issue)
-    md_output_path = Path(execute_tool(
+    md_output_path = Path(await execute_tool_async(
         "save_document",
         {
             "file_name": file_name,
@@ -1097,7 +1116,7 @@ async def _save_and_convert_document(
     logger.info("=" * 50)
     logger.info("Phase 6: 预处理打印 HTML（PDF 由前端浏览器渲染）")
     _record_trace(run_id, "phase_started", phase="convert_pdf", markdown_path=str(md_output_path))
-    execute_tool("convert_to_pdf", {"md_path": str(md_output_path)})
+    await execute_tool_async("convert_to_pdf", {"md_path": str(md_output_path)})
     _record_trace(
         run_id,
         "phase_completed",
@@ -1124,6 +1143,7 @@ async def run_agent(
     source_files: Optional[list[str]] = None,
     run_id: Optional[str] = None,
     generation_mode: str = DEFAULT_GENERATION_MODE,
+    serch_web: bool = False,
 ) -> Path:
     """完整的文档生成流程。
 
@@ -1134,10 +1154,17 @@ async def run_agent(
         source_files: 前端上传的需求/依赖文件路径列表，默认用 agent_input/requirement.md
         run_id: 可选任务 ID，用于读取 trace 或请求终止
         generation_mode: structured=提示词+文件+预定义 output 规范；prompt_only=仅提示词+文件
+        serch_web: 是否向模型开放 search_web 联网搜索工具
     """
     normalized_mode = normalize_generation_mode(generation_mode)
     if run_id and get_generation_trace(run_id) is None:
-        start_generation_trace(run_id, doc_type=doc_type, user_hint=user_hint, generation_mode=normalized_mode)
+        start_generation_trace(
+            run_id,
+            doc_type=doc_type,
+            user_hint=user_hint,
+            generation_mode=normalized_mode,
+            serch_web=serch_web,
+        )
 
     try:
         _check_terminated(run_id, "run")
@@ -1150,14 +1177,16 @@ async def run_agent(
             phase="run",
             source_files=resolved_source_files or ([] if normalized_mode != "structured" else ["agent_input/requirement.md"]),
             generation_mode=normalized_mode,
+            serch_web=bool(serch_web),
         )
 
         logger.info(f"文档类型: {doc_type}")
         logger.info(f"生成模式: {normalized_mode}")
+        logger.info(f"联网搜索: {'开启' if serch_web else '关闭'}")
         logger.info(f"输出目录: {OUTPUT_DIR}")
 
         if normalized_mode != "structured":
-            source_content = _read_direct_generation_context(
+            source_content = await _read_direct_generation_context(
                 resolved_source_files,
                 normalized_mode,
                 run_id,
@@ -1186,6 +1215,7 @@ async def run_agent(
             doc_type,
             user_hint=user_hint,
             run_id=run_id,
+            serch_web=serch_web,
         )
 
         # ── Phase 2: 拆解章节（按一级标题分组）──
@@ -1216,7 +1246,7 @@ async def run_agent(
 
             content = await _generate_section_group(
                 group, requirement, project_context, layout, doc_type,
-                user_hint, prev_title, next_title, run_id=run_id,
+                user_hint, prev_title, next_title, run_id=run_id, serch_web=serch_web,
             )
             # 校验生成内容
             if not content or len(content.strip()) < 100:  # 简单校验：内容太短则重试一次
@@ -1224,7 +1254,7 @@ async def run_agent(
                 _record_trace(run_id, "section_retry", phase="generate_sections", title=group["title"])
                 content = await _generate_section_group(
                     group, requirement, project_context, layout, doc_type,
-                    user_hint, prev_title, next_title, run_id=run_id,
+                    user_hint, prev_title, next_title, run_id=run_id, serch_web=serch_web,
                 )
             generated.append(content)
             logger.info(f"  完成 ({i + 1}/{len(top_sections)}): {group['title']}")
@@ -1262,7 +1292,7 @@ async def run_agent(
                                 next_title = top_sections[j + 1]["title"] if j + 1 < len(top_sections) else ""
                                 content = await _generate_section_group(
                                     group, requirement, project_context, layout, doc_type,
-                                    user_hint, prev_title, next_title, run_id=run_id,
+                                    user_hint, prev_title, next_title, run_id=run_id, serch_web=serch_web,
                                 )
                                 if content and len(content.strip()) >= 100:
                                     generated[j] = content
@@ -1293,7 +1323,9 @@ async def run_agent(
         _record_trace(run_id, "document_stitched", phase="stitch", content=full_body)
 
         # 全文拼接只做确定性规范化，避免最终 LLM 审校压缩正文或引入重复封面信息。
-        final_doc = normalize_document_header(full_body, doc_type, user_hint)
+        final_doc = await asyncio.to_thread(
+            normalize_document_header, full_body, doc_type, user_hint
+        )
         _record_trace(
             run_id,
             "phase_completed",
@@ -1323,6 +1355,6 @@ if __name__ == "__main__":
     HINT = "请根据项目实际情况，生成一份完整规范的需求规格说明书。内容要详实，符合大型软件项目标准。"
 
     logger.info(f"智能体启动，目标: {DOC_TYPE}")
-    path = run_agent(doc_type=DOC_TYPE, user_hint=HINT)
+    path = asyncio.run(run_agent(doc_type=DOC_TYPE, user_hint=HINT))
     logger.info(f"完成！文件: {path}")
 

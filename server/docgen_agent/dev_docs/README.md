@@ -4,21 +4,32 @@
 
 **核心设计原则**：所有格式与排版规范集中在配置文件（JSON）中，提示词（prompt）仅做补充说明，不重复或覆盖配置中的规则。
 
+**并发模型**: 基于 Python asyncio 事件循环，同步阻塞操作（文件 I/O、外部渲染、字符串处理）通过 `asyncio.to_thread()` 卸载到线程池。支持多任务并发执行，任务间通过 `ContextVar` 隔离状态。详见 [ASYNC_CONCURRENCY.md](./ASYNC_CONCURRENCY.md)。
+
+**中断/终止**: 协作式终止机制，27 个检查点覆盖 LLM 流式输出、工具调用、阶段边界。后端重启时自动清理残留运行中任务。详见 [INTERRUPT_TERMINATION.md](./INTERRUPT_TERMINATION.md)。
+
 ## 目录结构
 
 ```text
 docgen_agent/
-├── workflow.py            # 主循环: Phase 1→6 (读取→拆章→生成→校验→拼接→PDF)
-├── tools.py               # 工具定义、实现、渲染、CSS、PDF 转换
-├── api.py                 # FastAPI 路由 (同步/后台生成、trace、中断、下载)
+├── workflow.py            # 主循环: Phase 1→6 (读取→拆章→生成→校验→拼接→保存)
+├── tools.py               # 工具定义、实现、渲染、CSS、HTML 转换
+├── api.py                 # FastAPI 路由 (后台生成、trace、中断、下载、启动清理)
 ├── agent_input/
 │   ├── output_schema.json # 文档结构: 章节树、required/tips/diagram、UML 语法指南
 │   ├── output_layout.json # 排版唯一来源: 页面、字体、标题、图表、表格、列表
 │   └── requirement.md     # 默认需求输入
 ├── dev_docs/              # 开发说明文档
+│   ├── README.md          # 项目概览
+│   ├── API.md             # 接口文档
+│   ├── TOOLS.md           # 工具实现说明
+│   ├── SCHEMA.md          # Schema 设计说明
+│   ├── LAYOUT.md          # 布局配置说明
+│   ├── ASYNC_CONCURRENCY.md  # 异步并发/事件循环/线程池分析报告
+│   └── INTERRUPT_TERMINATION.md # 中断/终止机制与冲突分析
 ├── output_docs/           # 输出目录
-│   ├── diagrams/          # 渲染后的图片 (PNG)
-│   └── *.md / *.pdf       # 生成的文档
+│   ├── _tmp_images/       # 临时渲染图片
+│   └── *.md               # 生成的文档
 └── agent_output/          # 预留的运行产物目录
 ```
 
@@ -26,13 +37,25 @@ docgen_agent/
 
 | Phase | 名称 | 说明 |
 |-------|------|------|
-| 1 | 读取文件 | LLM 调用 read_requirement / read_output_schema / read_output_layout，并为架构/测试文档读取项目上下文 |
+| 1 | 读取文件 | LLM 调用 read_requirement / read_output_schema / read_output_layout，并为架构/测试文档读取项目上下文。工具调用通过 `asyncio.gather` 并行执行。 |
 | 2 | 拆解章节 | 按 schema 展开一级章节列表 |
-| 3 | 逐节生成 | 每个一级章节组独立生成，LLM 可调用 render_* / search_web |
+| 3 | 逐节生成 | 每个一级章节组独立生成，LLM 可调用 render_* / search_web。各工具调用通过 `asyncio.gather` 并行执行。 |
 | 3.5 | Schema 校验 | 检查 required 章节是否都存在，缺失则重新生成 (最多 2 轮) |
-| 4 | 拼接校验 | 确定性拼接全文并添加封面小组信息 |
-| 5 | 保存 MD | 标题、列表、图表 caption 和表格结构修正安全网 + 保存 Markdown |
-| 6 | 预处理 HTML | 清理 → 图表渲染 → Markdown→HTML → base64 嵌入 → CSS 排版（PDF 由前端浏览器打印） |
+| 4 | 拼接校验 | 确定性拼接全文并添加封面小组信息。格式化操作通过 `asyncio.to_thread` 移入线程池。 |
+| 5 | 保存 MD | 标题、列表、图表 caption 和表格结构修正安全网 → 保存 Markdown。全部格式化在 `asyncio.to_thread` 内执行。 |
+| 6 | 预处理 HTML | 清理 → 图表渲染 → Markdown→HTML → base64 嵌入 → CSS 排版（PDF 由前端浏览器打印）。通过 `asyncio.to_thread` 执行。 |
+
+### 并发关键点
+
+| 操作类型 | 执行方式 | 原因 |
+|---------|---------|------|
+| LLM 流式 API 调用 | 原生 `await` + `async for` | `AsyncOpenAI` 基于 `httpx.AsyncClient`，协程友好 |
+| 文件 I/O（读取/写入） | `await asyncio.to_thread()` | `Path.read_text()` / `shutil.copyfileobj` 是同步阻塞操作 |
+| Mermaid/PlantUML 外部渲染 | `await asyncio.to_thread()` | `requests.get()` 是同步阻塞 HTTP 调用 |
+| 文档格式化（正则处理） | `await asyncio.to_thread()` | CPU 密集型正则匹配和字符串重构 |
+| 同步 DB 操作 | `await asyncio.to_thread()` | `SQLModel.Session` 同步引擎 |
+| Trace 事件记录 | 直接在事件循环中 | 纯内存 dict 操作，< 1μs |
+| 联网搜索 | 原生 `await` | `httpx.AsyncClient` 异步 HTTP |
 
 ## 支持文档
 

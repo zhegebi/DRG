@@ -18,6 +18,7 @@
 """
 
 import base64
+import asyncio
 import fnmatch
 import html as html_module
 import json
@@ -28,7 +29,7 @@ import sys
 import tomllib
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, cast
+from typing import Any, Awaitable, Callable, Iterable, Optional, cast
 from urllib.parse import unquote
 
 from loguru import logger
@@ -538,23 +539,26 @@ def _tool_name(tool: ToolDefinition) -> str:
 _TOOL_BY_NAME: dict[str, ToolDefinition] = {_tool_name(tool): tool for tool in TOOLS}
 
 
-def get_tools_for_phase(phase: str) -> list[ToolDefinition]:
+def get_tools_for_phase(phase: str, *, serch_web: bool = True) -> list[ToolDefinition]:
     """返回某阶段可用的工具列表。
 
     'read'  — 文件读取阶段（read_* + search_web）
     'write' — 撰写阶段（search_web + save_document）
     """
+    def _filter_search(names: Iterable[str]) -> list[str]:
+        return [name for name in names if serch_web or name != "search_web"]
+
     if phase == "read":
-        return [_TOOL_BY_NAME[name] for name in _READ_TOOL_NAMES]
+        return [_TOOL_BY_NAME[name] for name in _filter_search(_READ_TOOL_NAMES)]
     if phase == "write":
-        return [_TOOL_BY_NAME[name] for name in _WRITE_TOOL_NAMES]
+        return [_TOOL_BY_NAME[name] for name in _filter_search(_WRITE_TOOL_NAMES)]
     return TOOLS
 
 
 # ============================================================
 # 工具实现
 # ============================================================
-ToolHandler = Callable[[dict], str]
+ToolHandler = Callable[[dict], str | Awaitable[str]]
 
 
 def _handle_read_requirement(_arguments: dict) -> str:
@@ -603,10 +607,10 @@ def _handle_save_document(arguments: dict) -> str:
     return str(output_path)
 
 
-def _handle_search_web(arguments: dict) -> str:
+async def _handle_search_web(arguments: dict) -> str:
     query = arguments.get("query", "")
     logger.info(f"   search_web: {query[:80]}...")
-    return _do_web_search(query)
+    return await _do_web_search(query)
 
 
 def _handle_list_project_files(arguments: dict) -> str:
@@ -712,7 +716,20 @@ def execute_tool(name: str, arguments: dict) -> str:
     handler = _TOOL_HANDLERS.get(name)
     if handler is None:
         return f"未知工具: {name}"
-    return handler(arguments)
+    if asyncio.iscoroutinefunction(handler):
+        raise RuntimeError(f"工具 {name} 是异步工具，请使用 execute_tool_async")
+    result = handler(arguments)
+    return cast(str, result)
+
+
+async def execute_tool_async(name: str, arguments: dict) -> str:
+    handler = _TOOL_HANDLERS.get(name)
+    if handler is None:
+        return f"未知工具: {name}"
+    if asyncio.iscoroutinefunction(handler):
+        return await handler(arguments)
+    sync_handler = cast(Callable[[dict], str], handler)
+    return await asyncio.to_thread(sync_handler, arguments)
 
 
 # ============================================================
@@ -1163,17 +1180,18 @@ def read_test_context() -> str:
 # ============================================================
 # 联网搜索
 # ============================================================
-def _do_web_search(query: str) -> str:
+async def _do_web_search(query: str) -> str:
     """使用 DuckDuckGo Instant Answer API 搜索。"""
-    import requests
+    import httpx
 
     try:
-        resp = requests.get(
-            "https://api.duckduckgo.com/",
-            params={"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"},
-            timeout=15,
-        )
-        data = resp.json()
+        async with httpx.AsyncClient(timeout=15) as http:
+            resp = await http.get(
+                "https://api.duckduckgo.com/",
+                params={"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
         results = []
         if data.get("AbstractText"):
             results.append(f"摘要: {data['AbstractText']}")

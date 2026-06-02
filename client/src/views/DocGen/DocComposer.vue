@@ -93,6 +93,19 @@
           </div>
         </div>
 
+        <AppTooltip :text="serchWebTooltipText">
+          <button
+            class="composer-tool-button web-search-toggle"
+            :class="{ active: serchWebEnabled }"
+            type="button"
+            :aria-pressed="serchWebEnabled"
+            aria-label="搜索网络"
+            @click="serchWebEnabled = !serchWebEnabled"
+          >
+            <SvgIcon type="mdi" :path="mdiWeb" class="button-icon" />
+          </button>
+        </AppTooltip>
+
         <button
           ref="docSubmitButtonRef"
           class="submit-button"
@@ -127,6 +140,7 @@ import {
   mdiFormatListBulletedType,
   mdiLoading,
   mdiSend,
+  mdiWeb,
 } from '@mdi/js'
 import { useDocGen } from './useDocGen'
 
@@ -135,6 +149,7 @@ const {
   selectedDocTypes,
   generationModes,
   selectedGenerationMode,
+  serchWebEnabled,
   promptInput,
   sourceFiles,
   isSubmitting,
@@ -145,6 +160,7 @@ const {
   generationModeMenuOpen,
   selectedDocTypeLabel,
   selectedGenerationModeConfig,
+  serchWebTooltipText,
   submitGeneration,
   handlePromptKeydown,
   onSourceFileChange,
@@ -401,6 +417,11 @@ const {
 .doc-composer .generation-mode-trigger:hover,
 .icon-button:hover {
   background: #eef6ff;
+}
+
+.doc-composer .web-search-toggle.active {
+  background: #e8f5ff;
+  color: #005f9e;
 }
 
 .doc-type-control {

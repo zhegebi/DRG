@@ -42,6 +42,7 @@ export interface RunTrace {
   doc_type: string
   task_title: string
   generation_mode?: GenerationMode | string
+  serch_web?: boolean
   created_at: string
   updated_at: string
   output_path: string | null
@@ -57,6 +58,7 @@ export interface StartGenerationResponse {
   doc_type: string
   task_title: string
   generation_mode: GenerationMode | string
+  serch_web: boolean
 }
 
 interface DocgenTaskTraceResponse {
@@ -66,6 +68,7 @@ interface DocgenTaskTraceResponse {
   doc_type?: string
   task_title?: string
   generation_mode?: GenerationMode | string
+  serch_web?: boolean
   created_at?: string | null
   updated_at?: string | null
   output_path?: string | null
@@ -90,6 +93,7 @@ const normalizeTrace = (trace: DocgenTaskTraceResponse): RunTrace => ({
   doc_type: trace.doc_type || '',
   task_title: trace.task_title || trace.doc_type || '',
   generation_mode: trace.generation_mode || 'structured',
+  serch_web: Boolean(trace.serch_web),
   created_at: trace.created_at || '',
   updated_at: trace.updated_at || '',
   output_path: trace.output_path ?? null,
@@ -166,11 +170,13 @@ export const startGeneration = async (
   docType: DocType,
   sourceFiles?: SourceFileInput,
   generationMode: GenerationMode = 'structured',
+  serchWeb = false,
 ): Promise<StartGenerationResponse> => {
   const form = new FormData()
   form.append('prompt', prompt)
   form.append('doc_type', docType)
   form.append('generation_mode', generationMode)
+  form.append('serch_web', String(serchWeb))
   appendSourceFiles(form, sourceFiles)
   return await multipartPost<StartGenerationResponse>(`${DOCGEN_BASE}/task/create`, form)
 }

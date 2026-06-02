@@ -107,6 +107,7 @@ const generationModes: Array<{ value: GenerationMode, label: string, description
   { value: 'prompt_only', label: '提示词+文件', description: '只按提示词和上传文件撰写' },
 ]
 const selectedGenerationMode = ref<GenerationMode>('structured')
+const serchWebEnabled = ref(false)
 const promptInput = ref('')
 const sourceFiles = ref<File[]>([])
 const isSubmitting = ref(false)
@@ -570,6 +571,10 @@ export function useDocGen() {
     return generationModes.find((mode) => mode.value === selectedGenerationMode.value) || defaultGenerationModeConfig
   })
 
+  const serchWebTooltipText = computed(() => {
+    return serchWebEnabled.value ? '联网搜索已开启' : '联网搜索已关闭'
+  })
+
   const conversationRuns = computed(() => {
     return selectedRun.value ? [selectedRun.value] : []
   })
@@ -579,8 +584,19 @@ export function useDocGen() {
     return runs.length ? runs[runs.length - 1] : selectedRun.value
   })
 
+  const pdfPreviewFileName = computed(() => {
+    if (!selectedRun.value) return '待生成'
+    const pdfName = basename(selectedRun.value.pdf_path)
+    if (pdfName) return pdfName
+    const markdownName = basename(selectedRun.value.output_path)
+    if (selectedRun.value.status === 'completed' && markdownName) {
+      return markdownName.replace(/\.md$/i, '.pdf')
+    }
+    return '待生成'
+  })
+
   const previewFileTitle = computed(() => {
-    if (previewFileKind.value === 'pdf') return basename(selectedRun.value?.pdf_path) || 'PDF 预览'
+    if (previewFileKind.value === 'pdf') return pdfPreviewFileName.value || 'PDF 预览'
     if (previewFileKind.value === 'markdown') return basename(selectedRun.value?.output_path) || 'Markdown 预览'
     if (previewFileKind.value === 'image') return '图片预览'
     return '未选择文件'
@@ -1464,28 +1480,37 @@ export function useDocGen() {
       docTypeMenuOpen.value = false
       generationModeMenuOpen.value = false
       const initialPrompt = promptInput.value.trim()
-      const startedRuns: RunTrace[] = []
-      for (const docType of selectedDocTypes.value) {
-        const response = await startGeneration(initialPrompt, docType, sourceFiles.value, selectedGenerationMode.value)
-        saveLocalRunId(response.task_id)
-        saveRunPrompt(response.task_id, initialPrompt || docType)
-        const stub: RunTrace = {
-          run_id: response.task_id,
-          status: 'running',
-          doc_type: response.doc_type,
-          task_title: response.task_title || response.doc_type,
-          generation_mode: response.generation_mode || selectedGenerationMode.value,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          output_path: null,
-          pdf_path: null,
-          error: null,
-          terminated: false,
-          events: [],
-        }
-        updateRunInHistory(stub)
-        startedRuns.push(stub)
-      }
+      // 并行发起所有文档类型的生成任务，而非串行等待
+      const startedRuns: RunTrace[] = await Promise.all(
+        selectedDocTypes.value.map(async (docType) => {
+          const response = await startGeneration(
+            initialPrompt,
+            docType,
+            sourceFiles.value,
+            selectedGenerationMode.value,
+            serchWebEnabled.value,
+          )
+          saveLocalRunId(response.task_id)
+          saveRunPrompt(response.task_id, initialPrompt || docType)
+          const stub: RunTrace = {
+            run_id: response.task_id,
+            status: 'running',
+            doc_type: response.doc_type,
+            task_title: response.task_title || response.doc_type,
+            generation_mode: response.generation_mode || selectedGenerationMode.value,
+            serch_web: Boolean(response.serch_web ?? serchWebEnabled.value),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            output_path: null,
+            pdf_path: null,
+            error: null,
+            terminated: false,
+            events: [],
+          }
+          updateRunInHistory(stub)
+          return stub
+        }),
+      )
       const firstRun = startedRuns[0]
       if (!firstRun) throw new Error('后台生成接口未返回运行任务')
       selectedRunId.value = firstRun.run_id
@@ -1631,6 +1656,7 @@ export function useDocGen() {
     selectedDocTypes,
     generationModes,
     selectedGenerationMode,
+    serchWebEnabled,
     promptInput,
     sourceFiles,
     isSubmitting,
@@ -1664,7 +1690,9 @@ export function useDocGen() {
     canTerminateRun,
     selectedDocTypeLabel,
     selectedGenerationModeConfig,
+    serchWebTooltipText,
     statusRun,
+    pdfPreviewFileName,
     previewFileTitle,
     previewMarkdownHtml,
     previewImagePaths,
