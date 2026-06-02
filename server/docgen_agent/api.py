@@ -79,7 +79,7 @@ def terminate_stale_tasks_on_startup() -> int:
 
     try:
         with Session(engine) as session:
-            stmt = select(DocgenTask).where(DocgenTask.status.in_(_STALE_RUN_STATUSES))
+            stmt = select(DocgenTask).where(DocgenTask.status.in_(_STALE_RUN_STATUSES)) #type:ignore
             stale_tasks: list[DocgenTask] = list(session.exec(stmt).all())
 
             for row in stale_tasks:
