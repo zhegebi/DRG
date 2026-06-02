@@ -241,8 +241,9 @@ import {
 import type { TaskStep } from '@/api'
 import { marked } from 'marked'
 import * as pdfjsLib from 'pdfjs-dist'
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
 type TaskStatus = 'pending' | 'running' | 'success' | 'failed'
 
@@ -633,6 +634,9 @@ const handleFileUpload = async (e: Event) => {
       const text = await file.text()
       fileList.value.push({ name: file.name, content: text })
     }
+  } catch (err) {
+    console.error('文件上传失败:', err)
+    alert(`文件上传失败: ${err instanceof Error ? err.message : String(err)}`)
   } finally {
     isUploading.value = false
     uploadingFileName.value = ''

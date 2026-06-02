@@ -1,3 +1,5 @@
+import mimetypes
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +14,10 @@ ALL_PAGE_ROUTERS = {"/", "/drg", "/doc"}
 
 
 def init_assets():
+    # Ensure .mjs / .wasm files return the correct MIME type, otherwise the browser will refuse to load the Web Worker
+    mimetypes.add_type("text/javascript", ".mjs")
+    mimetypes.add_type("application/wasm", ".wasm")
+
     if not FRONTEND_DIR.exists():
         FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
 
